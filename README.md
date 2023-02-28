@@ -1,6 +1,13 @@
 # Nami-Simulator
 A MBD and Beam based simulator based on the Project Chrono physics engine. The goal of this project is to build a tool to better characterize the loads on the main steering shaft of the Nami Burn E scooter and better understand the catastrophic failure mode in which the shaft can fracture.
+![image](https://user-images.githubusercontent.com/22308960/221742415-0f9a55ee-e3bf-40af-bb90-71821a18af2e.png)
+![image](https://user-images.githubusercontent.com/22308960/221742497-f40b7ab3-83c5-49ed-9d01-54a9d43c6913.png)
 
+To compile, you will need to follow the installation instructions for Project Chrono: https://api.projectchrono.org/tutorial_install_chrono.html. Once complete, you will need to configure this project in CMake and copy+paste the data/ directory from the Project Chrono install into the build folder for this project.
+
+Once the project is more mature, I will add precompiled versions along with more user friendly UI features.
+
+Some more context on the issue:
 It is suspected that the AL 7075 steering shaft present in all Nami Burn E scooters manufactured before Jan. 2023 are seeing stress from normal use which eventually exceed the typical fatigue limit for aluminum 7075. Several scooters have failed suddenly and catastrophically due to this suspected design oversight.
 
 Anectotal cases can be found in the following Facebook post: https://www.facebook.com/groups/namiworldwide/posts/1246539072876878/
