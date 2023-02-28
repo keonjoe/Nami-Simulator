@@ -10,7 +10,7 @@ Once the project is more mature, I will add precompiled versions along with more
 Some more context on the issue:
 It is suspected that the AL 7075 steering shaft present in all Nami Burn E scooters manufactured before Jan. 2023 are seeing stress from normal use which eventually exceed the typical fatigue limit for aluminum 7075. Several scooters have failed suddenly and catastrophically due to this suspected design oversight.
 
-Anectotal cases can be found in the following Facebook post: https://www.facebook.com/groups/namiworldwide/posts/1246539072876878/
+Anecdotal cases can be found in the following Facebook post: https://www.facebook.com/groups/namiworldwide/posts/1246539072876878/
 
 ![image](https://user-images.githubusercontent.com/22308960/221741353-53e77080-0c12-4dd1-ac0b-46c8455093dc.png)
 ![image](https://user-images.githubusercontent.com/22308960/221741426-128e19f0-db9a-4280-bdd8-969bab90e73c.png)
