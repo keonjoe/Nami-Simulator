@@ -49,9 +49,8 @@ project(nami_stem)
 #   additional linker flags
 # CHRONO_DLLS
 #   list of all DLL dependencies (with full path)
-# CHRONO_DATA_DIR 
-#   ("Q:/GitHub_Clone/chrono/source/data")
-
+# CHRONO_DATA_DIR
+#   path to the Chrono data make_directory
 # 
 # In addition, for each requested component [COMPONENT], the
 # following variable is set to true (ON) or false (OFF):
@@ -63,8 +62,8 @@ project(nami_stem)
 
 LIST(APPEND CMAKE_PREFIX_PATH "${CMAKE_INSTALL_PREFIX}/../Chrono/lib")
 find_package(Chrono
-             COMPONENTS Irrlicht PardisoMKL
-             OPTIONAL_COMPONENTS
+             COMPONENTS Irrlicht
+             OPTIONAL_COMPONENTS PardisoMKL
              CONFIG)
 
 #--------------------------------------------------------------
@@ -84,10 +83,10 @@ endif()
 # For OpenGL-based or non-graphics projects, this is optional and the block
 # below can be removed (or else explcitly set CMAKE_MACOSX_BUNDLE to 'OFF').
 #
-# If creating application bundles, the build output will be named 'nami_stem.app'.
+# If creating application bundles, the build output will be named 'myexe.app'.
 # Use the convenience script 'run_app.sh' available under 'contrib/appbundle-macosx/'
 # to run:
-#     start_demo.sh nami_stem.app
+#     start_demo.sh myexe.app
 
 if(APPLE)
     set(CMAKE_MACOSX_BUNDLE ON)
@@ -119,8 +118,6 @@ if(MSVC)
     add_definitions( "-DNOMINMAX" )                # do not use MSVC's min/max macros
     add_compile_options(/wd4275)                   # disable warnings triggered by Irrlicht
     add_compile_options(/wd4251)                   # class needs to have dll-interface
-else()
-    set(EXTRA_COMPILE_FLAGS "")
 endif()
 
 #--------------------------------------------------------------
@@ -140,10 +137,9 @@ add_executable(nami_stem nami_stem.cpp)
 # install tree (if using an installed version of Chrono).
 #--------------------------------------------------------------
 
-set_target_properties(nami_stem PROPERTIES 
-	    COMPILE_FLAGS "${CHRONO_CXX_FLAGS} ${EXTRA_COMPILE_FLAGS}"
-	    COMPILE_DEFINITIONS "CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\""
-	    LINK_FLAGS "${CHRONO_LINKER_FLAGS}")
+target_compile_definitions(nami_stem PUBLIC "CHRONO_DATA_DIR=\"${CHRONO_DATA_DIR}\"") 
+target_compile_options(nami_stem PUBLIC ${CHRONO_CXX_FLAGS})
+target_link_options(nami_stem PUBLIC ${CHRONO_LINKER_FLAGS})
 
 #--------------------------------------------------------------
 # Link to Chrono libraries and dependency libraries

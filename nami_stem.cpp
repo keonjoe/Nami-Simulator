@@ -10,6 +10,7 @@
 // =============================================================================
 
 #include "chrono/physics/ChSystemSMC.h"
+#include "chrono/physics/ChSystemNSC.h"
 #include "chrono/physics/ChLinkMate.h"
 #include "chrono/physics/ChLinkBushing.h"
 #include "chrono/physics/ChLoadContainer.h"
@@ -17,25 +18,29 @@
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/physics/ChLinkMotorLinearPosition.h"
 #include "chrono/timestepper/ChTimestepper.h"
+#include "chrono/timestepper/ChTimestepperHHT.h"
 #include "chrono/solver/ChIterativeSolverLS.h"
 
 #include "chrono/fea/ChElementBeamIGA.h"
 #include "chrono/fea/ChBuilderBeam.h"
 #include "chrono/fea/ChMesh.h"
-#include "chrono/fea/ChVisualizationFEAmesh.h"
+#include "chrono/assets/ChVisualShapeFEA.h"
 #include "chrono/fea/ChLinkPointFrame.h"
 #include "chrono/fea/ChLinkDirFrame.h"
 #include "chrono/physics/ChLinkMotorRotationSpeed.h"
 #include "chrono/physics/ChLinkMotorRotationAngle.h"
 
-#include "chrono_irrlicht/ChIrrApp.h"
+#include"chrono/physics/ChLinkLock.h"
+#include"chrono/physics/ChMarker.h"
+
+#include "chrono_irrlicht/ChVisualSystemIrrlicht.h"
 
 #include "chrono_thirdparty/filesystem/path.h"
 
 #define USE_MKL
 
 #ifdef USE_MKL
-#include "chrono_pardisomkl/ChSolverPardisoMKL.h"
+    #include "chrono_pardisomkl/ChSolverPardisoMKL.h"
 #endif
 
 using namespace chrono;
@@ -52,221 +57,392 @@ const std::string out_dir = GetChronoOutputPath() + "NAMI_SIM";
 // MBD Simulation of Nami under typical driving conditions
 //
 
-void Nami_MBD(ChIrrApp& myapp) {
-    // Clear previous demo, if any:
-    myapp.GetSystem()->Clear();
-    myapp.GetSystem()->SetChTime(0);
+void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
 
     // Gravity
-    myapp.GetSystem()->Set_G_acc(ChVector<>(0, 0, 0));
+    sys.Set_G_acc(ChVector<>(0, -9.81, 0));
+
+    // 90 degree rotation about x
+    ChMatrix33<> rotx90;
+    rotx90(0, 0) = 1.;
+    rotx90(1, 2) = -1;
+    rotx90(2, 1) = 1;
 
     // Create ground
     auto ground_mat = chrono_types::make_shared<ChMaterialSurfaceSMC>();
-    ground_mat->SetFriction(1.0f);
-    auto my_ground = chrono_types::make_shared<ChBodyEasyBox>(40, 2, 40, 1000, true, true, ground_mat);
-    myapp.GetSystem()->Add(my_ground);
-    my_ground->SetPos(ChVector<>(0, -.72, 0));
-    my_ground->AddAsset(chrono_types::make_shared<ChTexture>(GetChronoDataFile("textures/concrete.jpg")));
+    ground_mat->SetFriction(0.6f);
+    ground_mat->SetRestitution(0.01);
+    ground_mat->SetYoungModulus(1e9);
+    ground_mat->SetKn(1e9);
+    ground_mat->SetGn(1e4);
+    ground_mat->SetKt(1e9);
+    ground_mat->SetGt(1e4);
+
+    auto my_ground = chrono_types::make_shared<ChBodyEasyBox>(5, 2, 5, 100, true, true, ground_mat);
+    sys.Add(my_ground);
+    my_ground->SetPos(ChVector<>(0, -1.07, 0));
+    my_ground->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/asphalt.jpg"));
+    my_ground->SetBodyFixed(true);
 
     // Chassis
-    auto chassis = chrono_types::make_shared<ChBodyAuxRef>();
-    chassis->SetName("chassis");
-    chassis->SetPos(ChVector<>(0.156558639120948, 0.45618860396864, 0.825935792342213));
-    chassis->SetRot(ChQuaternion<>(1, 0, 0, 0));
-    chassis->SetMass(20.0);
-    chassis->SetInertiaXX(ChVector<>(0.211032654183116, 0.840433909604176, 0.776593634576472));
-    chassis->SetInertiaXY(ChVector<>(0.0840281413530399, 5.21145927264413e-07, 1.99941031245599e-07));
-    chassis->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(0.0201073237964366, 0.0726288769056411, -7.80421472439711e-08), ChQuaternion<>(1, 0, 0, 0)));
-    chassis->SetBodyFixed(true);
+    auto body_1 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_1 = (0.0201073237964366, 0.0726288769056411, -7.80421472439711e-08);
+    body_1->SetName("chassis");
+    body_1->SetPos(ChVector<>(-0.000153205702430964, 0.13205571060813, -0.000959909868418846));
+    body_1->SetRot(ChQuaternion<>(1, 0, 0, 0));
+    body_1->SetMass(20.0);
+    body_1->SetInertiaXX(ChVector<>(0.211032654183116, 0.840433909604176, 0.776593634576472));
+    body_1->SetInertiaXY(ChVector<>(0.0840281413530399, 5.21145927264413e-07, 1.99941031245599e-07));
+    body_1->SetFrame_COG_to_REF(ChFrame<>(offset_body_1, ChQuaternion<>(1, 0, 0, 0)));
+    body_1->SetBodyFixed(false);
 
-    auto chassis_shape = chrono_types::make_shared<ChObjShapeFile>();
-    chassis_shape->SetFilename("nami_shapes/body_1_1.obj");
-    auto chassis_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    chassis_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    chassis_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    chassis_shape_level->GetAssets().push_back(chassis_shape);
-    chassis->GetAssets().push_back(chassis_shape_level);
-    myapp.GetSystem()->Add(chassis);
-
-    // ArmF
-    auto ArmF = chrono_types::make_shared<ChBodyAuxRef>();
-    ArmF->SetName("ArmF");
-    ArmF->SetPos(ChVector<>(0.700241378639896, 0.412548214697154, 0.770935792342214));
-    ArmF->SetRot(ChQuaternion<>(0, 0.0718605555926286, 0.997414688356813, 0));
-    ArmF->SetMass(0.321049248299332);
-    ArmF->SetInertiaXX(ChVector<>(0.000788264266944777, 0.0014493703063036, 0.00202743171460841));
-    ArmF->SetInertiaXY(ChVector<>(0.000649249945254572, 0.000338930230322529, -0.000158608401534427));
-    ArmF->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(0.120886864360357, 0.0358063365547706, 0.0270943787334934), ChQuaternion<>(1, 0, 0, 0)));
-    ArmF->SetBodyFixed(true);
-
-    auto ArmF_shape = chrono_types::make_shared<ChObjShapeFile>();
-    ArmF_shape->SetFilename("nami_shapes/body_2_1.obj");
-    auto ArmF_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    ArmF_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    ArmF_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    ArmF_shape_level->GetAssets().push_back(ArmF_shape);
-    ArmF->GetAssets().push_back(ArmF_shape_level);
-    myapp.GetSystem()->Add(ArmF);
+    auto body_1_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_1_mesh->SetFilename("nami_shapes/body_1_1.obj");
+    body_1->AddVisualShape(body_1_mesh, ChFrame<>(ChVector<>(0,0,0), QUNIT));
+    sys.Add(body_1);
 
     // Steerer
-    auto Steerer = chrono_types::make_shared<ChBodyAuxRef>();
-    Steerer->SetName("Steerer");
-    Steerer->SetPos(ChVector<>(-0.376389000739641, 0.575321510741394, 0.825935792342213));
-    Steerer->SetRot(ChQuaternion<>(0.992546151641322, 5.94171322609101e-17, -1.85288106684137e-17, -0.121869343405147));
-    Steerer->SetMass(0.594254404421474);
-    Steerer->SetInertiaXX(ChVector<>(0.000711276612673922, 0.00312139605227589, 0.0034220703448989));
-    Steerer->SetInertiaXY(ChVector<>(0.00103955558775492, 2.71870866236714e-10, 8.62523753729234e-11));
-    Steerer->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(0.113005743174912, 0.0894157855753528, -4.37699941146324e-08), ChQuaternion<>(1, 0, 0, 0)));
-    Steerer->SetBodyFixed(true);
+    auto body_2 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_2 = (0.113005743174912, 0.0894157855753528, -4.37699941146324e-08);
+    body_2->SetName("steerer");
+    body_2->SetPos(ChVector<>(-0.533100845563019, 0.251188617380884, -0.000959909868418846));
+    body_2->SetRot(ChQuaternion<>(0.992546151641322, -2.98027677727551e-30, -2.42724065253796e-29, -0.121869343405147));
+    body_2->SetMass(0.594254404421474);
+    body_2->SetInertiaXX(ChVector<>(0.000711276612673922, 0.00312139605227589, 0.0034220703448989));
+    body_2->SetInertiaXY(ChVector<>(0.00103955558775492, 2.71870866303574e-10, 8.62523753592826e-11));
+    body_2->SetFrame_COG_to_REF(ChFrame<>(offset_body_2, ChQuaternion<>(1, 0, 0, 0)));
+    body_2->SetBodyFixed(false);
 
-    auto Steerer_shape = chrono_types::make_shared<ChObjShapeFile>();
-    Steerer_shape->SetFilename("nami_shapes/body_3_1.obj");
-    auto Steerer_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    Steerer_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    Steerer_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    Steerer_shape_level->GetAssets().push_back(Steerer_shape);
-    Steerer->GetAssets().push_back(Steerer_shape_level);
-    myapp.GetSystem()->Add(Steerer);
-
-    // ArmFF
-    auto ArmFF = chrono_types::make_shared<ChBodyAuxRef>();
-    ArmFF->SetName("ArmFF");
-    ArmFF->SetPos(ChVector<>(-0.385763361145546, 0.413002988595103, 0.778435792342213));
-    ArmFF->SetRot(ChQuaternion<>(0.99599140243737, -2.78220660427118e-18, -2.95876259323269e-18, 0.0894490149238158));
-    ArmFF->SetMass(0.321049248299332);
-    ArmFF->SetInertiaXX(ChVector<>(0.00046403577993344, 0.00177359879331494, 0.00202743171460841));
-    ArmFF->SetInertiaXY(ChVector<>(-0.000319455738292545, -0.000371746880238153, -4.28320335378637e-05));
-    ArmFF->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(0.120886864360357, 0.0358063365547706, -0.0270943787334934), ChQuaternion<>(1, 0, 0, 0)));
-    ArmFF->SetBodyFixed(true);
-
-    auto ArmFF_shape = chrono_types::make_shared<ChObjShapeFile>();
-    ArmFF_shape->SetFilename("nami_shapes/body_4_1.obj");
-    auto ArmFF_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    ArmFF_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    ArmFF_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    ArmFF_shape_level->GetAssets().push_back(ArmFF_shape);
-    ArmFF->GetAssets().push_back(ArmFF_shape_level);
-    myapp.GetSystem()->Add(ArmFF);
-
-    // WheelF
-    auto WheelF = chrono_types::make_shared<ChBodyAuxRef>();
-    WheelF->SetName("WheelF");
-    WheelF->SetPos(ChVector<>(0.700241378639895, 0.412548214697154, 0.826435792342214));
-    WheelF->SetRot(ChQuaternion<>(0.960537346903711, 9.94507142793928e-32, -4.3148291865133e-17, 0.278151047460153));
-    WheelF->SetMass(4.2062566150557);
-    WheelF->SetInertiaXX(ChVector<>(0.0243908244677193, 0.0243908244677193, 0.044549951549361));
-    WheelF->SetInertiaXY(ChVector<>(-1.80055204155548e-34, -3.5795596615153e-20, -3.18381614694786e-18));
-    WheelF->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(1.03510491323948e-37, -5.7967566505062e-18, -1.41906032851235e-17), ChQuaternion<>(1, 0, 0, 0)));
-    WheelF->SetBodyFixed(true);
-
-    auto WheelF_shape = chrono_types::make_shared<ChObjShapeFile>();
-    WheelF_shape->SetFilename("nami_shapes/body_5_1.obj");
-    auto WheelF_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    WheelF_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    WheelF_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    WheelF_shape_level->GetAssets().push_back(WheelF_shape);
-    WheelF->GetAssets().push_back(WheelF_shape_level);
-    myapp.GetSystem()->Add(WheelF);
+    auto body_2_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_2_mesh->SetFilename("nami_shapes/body_2_1.obj");
+    body_2->AddVisualShape(body_2_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    sys.Add(body_2);
 
     // Shaft
-    auto Shaft = chrono_types::make_shared<ChBodyAuxRef>();
-    Shaft->SetName("Shaft");
-    Shaft->SetPos(ChVector<>(-0.345664919998483, 0.698549067978446, 0.825935792342214));
-    Shaft->SetRot(ChQuaternion<>(0.282849853586366, -0.117665450641753, 0.697248048921812, 0.648070953157269));
-    Shaft->SetMass(0.0985042304529799);
-    Shaft->SetInertiaXX(ChVector<>(0.000242558032404906, 0.000108043462543166, 0.000342809496891775));
-    Shaft->SetInertiaXY(ChVector<>(0.000153327126239881, 1.76140417091936e-08, 1.1396206963321e-08));
-    Shaft->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(8.79899267446979e-10, 1.00266364829534e-08, 0.0961706604642605), ChQuaternion<>(1, 0, 0, 0)));
-    Shaft->SetBodyFixed(true);
+    auto body_3 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_3 = (8.79899267446979e-10, 1.00266364829534e-08, 0.0961706604642605);
+    body_3->SetName("shaft");
+    body_3->SetPos(ChVector<>(-0.502376764821862, 0.374416174617935, -0.000959909868418846));
+    body_3->SetRot(ChQuaternion<>(-0.43533840411809, 0.557207747523236, 0.435338404118086, 0.557207747523233));
+    body_3->SetMass(0.0985042304529799);
+    body_3->SetInertiaXX(ChVector<>(7.87091137170849e-06, 0.000342730583576364, 0.000342809496891776));
+    body_3->SetInertiaXY(ChVector<>(1.47055514339957e-11, -9.33444937294475e-11, -2.09790201222582e-08));
+    body_3->SetFrame_COG_to_REF(ChFrame<>(offset_body_3, ChQuaternion<>(1, 0, 0, 0)));
+    body_3->SetBodyFixed(false);
 
-    auto Shaft_shape = chrono_types::make_shared<ChObjShapeFile>();
-    Shaft_shape->SetFilename("nami_shapes/body_6_1.obj");
-    auto Shaft_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    Shaft_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    Shaft_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    Shaft_shape_level->GetAssets().push_back(Shaft_shape);
-    Shaft->GetAssets().push_back(Shaft_shape_level);
-    myapp.GetSystem()->Add(Shaft);
+    auto body_3_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_3_mesh->SetFilename("nami_shapes/body_3_1.obj");
+    body_3->AddVisualShape(body_3_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    sys.Add(body_3);
 
-    // ArmR
-    auto ArmR = chrono_types::make_shared<ChBodyAuxRef>();
-    ArmR->SetName("ArmR");
-    ArmR->SetPos(ChVector<>(-0.385763361145544, 0.413002988595106, 0.873435792342213));
-    ArmR->SetRot(ChQuaternion<>(0.99599140243737, -2.78220660427118e-18, -2.95876259323269e-18, 0.0894490149238159));
-    ArmR->SetMass(0.321049248299332);
-    ArmR->SetInertiaXX(ChVector<>(0.000464035779933439, 0.00177359879331494, 0.00202743171460841));
-    ArmR->SetInertiaXY(ChVector<>(-0.000319455738292545, 0.000371746880238153, 4.28320335378636e-05));
-    ArmR->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(0.120886864360357, 0.0358063365547706, 0.0270943787334934), ChQuaternion<>(1, 0, 0, 0)));
-    ArmR->SetBodyFixed(true);
+    // arm-4
+    auto body_4 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_4 = (0.120886864360357, 0.0358063365547706, 0.0270943787334934);
+    body_4->SetName("arm-4");
+    body_4->SetPos(ChVector<>(-0.542475205968921, 0.0888700952345957, 0.0449373620117023));
+    body_4->SetRot(ChQuaternion<>(0.99599140243737, 1.2065499730998e-31, 7.73304171792115e-31, 0.0894490149238171));
+    body_4->SetMass(0.321049248299332);
+    body_4->SetInertiaXX(ChVector<>(0.00046403577993344, 0.00177359879331494, 0.00202743171460841));
+    body_4->SetInertiaXY(ChVector<>(-0.000319455738292545, 0.000371746880238153, 4.28320335378637e-05));
+    body_4->SetFrame_COG_to_REF(ChFrame<>(offset_body_4, ChQuaternion<>(1, 0, 0, 0)));
+    body_4->SetBodyFixed(false);
 
-    auto ArmR_shape = chrono_types::make_shared<ChObjShapeFile>();
-    ArmR_shape->SetFilename("nami_shapes/body_2_1.obj");
-    auto ArmR_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    ArmR_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    ArmR_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    ArmR_shape_level->GetAssets().push_back(ArmR_shape);
-    ArmR->GetAssets().push_back(ArmR_shape_level);
-    myapp.GetSystem()->Add(ArmR);
+    auto body_4_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_4_mesh->SetFilename("nami_shapes/body_4_1.obj");
+    body_4->AddVisualShape(body_4_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    sys.Add(body_4);
 
-    // ArmRF
-    auto ArmRF = chrono_types::make_shared<ChBodyAuxRef>();
-    ArmRF->SetName("ArmRF");
-    ArmRF->SetPos(ChVector<>(0.700241378639895, 0.412548214697154, 0.880935792342214));
-    ArmRF->SetRot(ChQuaternion<>(-5.57369863355553e-18, 0.0718605555926288, 0.997414688356813, 7.73621751145053e-17));
-    ArmRF->SetMass(0.321049248299332);
-    ArmRF->SetInertiaXX(ChVector<>(0.000788264266944777, 0.0014493703063036, 0.00202743171460841));
-    ArmRF->SetInertiaXY(ChVector<>(0.000649249945254573, -0.000338930230322529, 0.000158608401534427));
-    ArmRF->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(0.120886864360357, 0.0358063365547706, -0.0270943787334934), ChQuaternion<>(1, 0, 0, 0)));
-    ArmRF->SetBodyFixed(true);
+    // arm_flip-6
+    auto body_5 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_5 = (0.120886864360357, 0.0358063365547706, -0.0270943787334934);
+    body_5->SetName("arm_flip-6");
+    body_5->SetPos(ChVector<>(0.543529533816517, 0.0884153213366434, 0.0460400901315811));
+    body_5->SetRot(ChQuaternion<>(-7.611333537688e-18, 0.0718605555926285, 0.997414688356813, 6.07574444692394e-17));
+    body_5->SetMass(0.321049248299332);
+    body_5->SetInertiaXX(ChVector<>(0.000788264266944777, 0.0014493703063036, 0.00202743171460841));
+    body_5->SetInertiaXY(ChVector<>(0.000649249945254572, -0.000338930230322529, 0.000158608401534427));
+    body_5->SetFrame_COG_to_REF(ChFrame<>(offset_body_5, ChQuaternion<>(1, 0, 0, 0)));
+    body_5->SetBodyFixed(false);
 
-    auto ArmRF_shape = chrono_types::make_shared<ChObjShapeFile>();
-    ArmRF_shape->SetFilename("nami_shapes/body_4_1.obj");
-    auto ArmRF_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    ArmRF_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    ArmRF_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    ArmRF_shape_level->GetAssets().push_back(ArmRF_shape);
-    ArmRF->GetAssets().push_back(ArmRF_shape_level);
-    myapp.GetSystem()->Add(ArmRF);
+    auto body_5_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_5_mesh->SetFilename("nami_shapes/body_5_1.obj");
+    body_5->AddVisualShape(body_5_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    sys.Add(body_5);
 
-    // WheelR
-    auto WheelR = chrono_types::make_shared<ChBodyAuxRef>();
-    WheelR->SetName("WheelR");
-    WheelR->SetPos(ChVector<>(-0.38576336114554, 0.413002988595107, 0.825935792342214));
-    WheelR->SetRot(ChQuaternion<>(0.999971455850444, 4.59753665861397e-33, -1.17206948926041e-18, 0.00755562600607394));
-    WheelR->SetMass(4.2062566150557);
-    WheelR->SetInertiaXX(ChVector<>(0.0243908244677193, 0.0243908244677193, 0.044549951549361));
-    WheelR->SetInertiaXY(ChVector<>(-3.74469085241138e-36, -1.01226146920017e-21, -3.19417413674102e-18));
-    WheelR->SetFrame_COG_to_REF(ChFrame<>(ChVector<>(1.03510491323948e-37, -5.7967566505062e-18, -1.41906032851235e-17), ChQuaternion<>(1, 0, 0, 0)));
-    WheelR->SetBodyFixed(true);
+    // arm_flip-5
+    auto body_6 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_6 = (0.120886864360357, 0.0358063365547706, -0.0270943787334934);
+    body_6->SetName("arm_flip-5");
+    body_6->SetPos(ChVector<>(-0.542475205968922, 0.0888700952345919, -0.0484599098684188));
+    body_6->SetRot(ChQuaternion<>(0.99599140243737, 1.2065499730998e-31, 7.73304171792115e-31, 0.0894490149238171));
+    body_6->SetMass(0.321049248299332);
+    body_6->SetInertiaXX(ChVector<>(0.000464035779933438, 0.00177359879331494, 0.00202743171460841));
+    body_6->SetInertiaXY(ChVector<>(-0.000319455738292542, -0.000371746880238153, -4.28320335378627e-05));
+    body_6->SetFrame_COG_to_REF(ChFrame<>(offset_body_6, ChQuaternion<>(1, 0, 0, 0)));
+    body_6->SetBodyFixed(false);
 
-    auto WheelR_shape = chrono_types::make_shared<ChObjShapeFile>();
-    WheelR_shape->SetFilename("nami_shapes/body_5_1.obj");
-    auto WheelR_shape_level = chrono_types::make_shared<ChAssetLevel>();
-    WheelR_shape_level->GetFrame().SetPos(ChVector<>(0, 0, 0));
-    WheelR_shape_level->GetFrame().SetRot(ChQuaternion<>(1, 0, 0, 0));
-    WheelR_shape_level->GetAssets().push_back(WheelR_shape);
-    WheelR->GetAssets().push_back(WheelR_shape_level);
-    myapp.GetSystem()->Add(WheelR);
+    auto body_6_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_6_mesh->SetFilename("nami_shapes/body_5_1.obj");
+    body_6->AddVisualShape(body_6_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    //sys.Add(body_6);
+
+    // arm-5
+    auto body_7 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_7 = (0.120886864360357, 0.0358063365547706, 0.0270943787334934);
+    body_7->SetName("arm-5");
+    body_7->SetPos(ChVector<>(0.543529533816517, 0.0884153213366431, -0.0479599098684188));
+    body_7->SetRot(ChQuaternion<>(0, 0.0718605555926294, 0.997414688356813, 0));
+    body_7->SetMass(0.321049248299332);
+    body_7->SetInertiaXX(ChVector<>(0.000788264266944779, 0.0014493703063036, 0.00202743171460841));
+    body_7->SetInertiaXY(ChVector<>(0.000649249945254574, 0.000338930230322528, -0.000158608401534428));
+    body_7->SetFrame_COG_to_REF(ChFrame<>(offset_body_7, ChQuaternion<>(1, 0, 0, 0)));
+    body_7->SetBodyFixed(false);
+
+    auto body_7_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_7_mesh->SetFilename("nami_shapes/body_4_1.obj");
+    body_7->AddVisualShape(body_7_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    //sys.Add(body_7);
+
+    // wheel-4
+    auto body_8 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_8 = (1.59226486139594e-34, 3.30455340437236e-20, -3.18546389230309e-18);
+    body_8->SetName("wheel-4");
+    body_8->SetPos(ChVector<>(0.543529533816521, 0.0884153213366514, -0.000809687736752623));
+    body_8->SetRot(ChQuaternion<>(0.966918087669092, 1.11542102956911e-32, 3.95704827193645e-17, -0.255087066975857));
+    body_8->SetMass(4.2062566150557);
+    body_8->SetInertiaXX(ChVector<>(0.0243908244677193, 0.0243908244677193, 0.044549951549361));
+    body_8->SetInertiaXY(ChVector<>(0.000649249945254573, -0.000338930230322529, 0.000158608401534427));
+    body_8->SetFrame_COG_to_REF(ChFrame<>(offset_body_8, ChQuaternion<>(1, 0, 0, 0)));
+    body_8->SetBodyFixed(false);
+
+    auto body_8_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_8_mesh->SetFilename("nami_shapes/body_8_1.obj");
+    body_8->AddVisualShape(body_8_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    sys.Add(body_8);
+
+    // Add collision shape for wheel
+    body_8->GetCollisionModel()->ClearModel();
+    body_8->GetCollisionModel()->AddCylinder(ground_mat, .14, 0.14, 0.038, ChVector<>(0.0, 0.0, 0.0), rotx90);
+    body_8->GetCollisionModel()->BuildModel();
+    body_8->SetCollide(true);
+    body_8->SetShowCollisionMesh(true);
+
+    // wheel-5
+    auto body_9 = chrono_types::make_shared<ChBodyAuxRef>();
+    ChVector<>offset_body_9 = (1.03510491323948e-37, -5.7967566505062e-18, -1.41906032851235e-17);
+    body_9->SetName("wheel-5");
+    body_9->SetPos(ChVector<>(-0.542475205968926, 0.088870095234598, -0.00190907502865676));
+    body_9->SetRot(ChQuaternion<>(0.999969000258921, 2.10655117921466e-33, -1.22144403593345e-18, 0.00787391396792193));
+    body_9->SetMass(4.2062566150557);
+    body_9->SetInertiaXX(ChVector<>(0.0243908244677193, 0.0243908244677193, 0.044549951549361));
+    body_9->SetInertiaXY(ChVector<>(-3.90251912334428e-36, -1.0549013599092e-21, -3.19417347876837e-18));
+    body_9->SetFrame_COG_to_REF(ChFrame<>(offset_body_9, ChQuaternion<>(1, 0, 0, 0)));
+    body_9->SetBodyFixed(false);
+
+    auto body_9_mesh = chrono_types::make_shared<ChModelFileShape>();
+    body_9_mesh->SetFilename("nami_shapes/body_8_1.obj");
+    body_9->AddVisualShape(body_9_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
+    sys.Add(body_9);
+
+    // Add collision shape for wheel
+    body_9->GetCollisionModel()->ClearModel();
+    body_9->GetCollisionModel()->AddCylinder(ground_mat, .14, 0.14, 0.038, ChVector<>(0.0, 0.0, 0.0), rotx90);
+    body_9->GetCollisionModel()->BuildModel();
+    body_9->SetCollide(true);
+    body_9->SetShowCollisionMesh(true);
 
     //
     // Constraints (mates)
     //
+    ChVector<> linkLoc;
+    ChQuaternion<> linkRot;
+    ChVector<> linkLoc2;
 
+    // Mate constraint : Concentric1[MateConcentric] type : 1 align : 0 flip : False
+    //   Entity 0: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+    //   Entity 1: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
+    auto link2 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link2->SetConstrainedCoords(true, true, true, true, true, true);
+    linkLoc = ChVector<>(-0.496994002644769, 0.396005254527576, -0.000959909868418846);
+    linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+    link2->Initialize(body_3, body_2, ChFrame<>(linkLoc, linkRot));
+    link2->SetName("Concentric1");
+    sys.Add(link2);
 
+    // Mate constraint : Concentric3[MateConcentric] type : 1 align : 1 flip : False
+    //   Entity 0: C::E name : body_1, SW name : Chassis - 2, SW ref.type : 2 (2)
+    //   Entity 1: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+    auto link4 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link4->SetConstrainedCoords(true, true, true, true, true, true);
+    linkLoc = ChVector<>(-0.56914720800737, 0.106614554165759, -0.000959909868418846);
+    linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+    link4->Initialize(body_1, body_3, ChFrame<>(linkLoc, linkRot));
+    link4->SetName("Concentric3");
+    sys.Add(link4);
 
+    // Mate constraint : Concentric4[MateConcentric] type : 1 align : 1 flip : False
+    //   Entity 0: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
+    //   Entity 1: C::E name : body_6, SW name : arm_flip - 5, SW ref.type : 2 (2)
+    auto link6 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link6->SetConstrainedCoords(true, true, true, true, true, false);
+    linkLoc = ChVector<>(-0.336039894563173, 0.229882372022162, -43.46e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link6->Initialize(body_2, body_6, ChFrame<>(linkLoc,linkRot));
+    link6->SetName("Concentric4");
+    //sys.Add(link6);
+
+    // Mate constraint : Concentric5[MateConcentric] type : 1 align : 0 flip : False
+    //   Entity 0: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
+    //   Entity 1: C::E name : body_4, SW name : arm - 4, SW ref.type : 2 (2)
+    auto link8 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link8->SetConstrainedCoords(true, true, true, true, true, false);
+    linkLoc = ChVector<>(-0.336039894563173, 0.229882372022162, 40.74e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link8->Initialize(body_2, body_4, ChFrame<>(linkLoc, linkRot));
+    link8->SetName("Concentric5");
+    sys.Add(link8);
+
+    //// Mate constraint : Concentric8[MateConcentric] type : 1 align : 1 flip : False
+    ////   Entity 0: C::E name : body_1, SW name : Chassis - 2, SW ref.type : 2 (2)
+    ////   Entity 1: C::E name : body_5, SW name : arm_flip - 6, SW ref.type : 2 (2)
+    auto link10 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link10->SetConstrainedCoords(true, true, true, true, true, false);
+    linkLoc = ChVector<>(0.332247148475558, 0.22205571060813, 30.04e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link10->Initialize(body_1, body_5, ChFrame<>(linkLoc, linkRot));
+    link10->SetName("Concentric8");
+    sys.Add(link10);
+
+    //// Mate constraint : Concentric9[MateConcentric] type : 1 align : 0 flip : False
+    ////   Entity 0: C::E name : body_1, SW name : Chassis - 2, SW ref.type : 2 (2)
+    ////   Entity 1: C::E name : body_7, SW name : arm - 5, SW ref.type : 2 (2)
+    auto link12 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link12->SetConstrainedCoords(true, true, true, true, true, false);
+    linkLoc = ChVector<>(0.332247148475558, 0.22205571060813, -31.96e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link12->Initialize(body_1, body_7, ChFrame<>(linkLoc, linkRot));
+    link12->SetName("Concentric9");
+    //sys.Add(link12);
+
+    //// Mate constraint : Concentric12[MateConcentric] type : 1 align : 0 flip : False
+    ////   Entity 0: C::E name : body_4, SW name : arm - 4, SW ref.type : 2 (2)
+    ////   Entity 1: C::E name : body_9, SW name : wheel - 5, SW ref.type : 2 (2)
+    auto link14 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link14->SetConstrainedCoords(true, true , true, true, true, false);
+    linkLoc = ChVector<>(-0.542475205968926, 0.088870095234598, 94.94e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link14->Initialize(body_4, body_9, ChFrame<>(linkLoc, linkRot));
+    link14->SetName("Concentric12");
+    sys.Add(link14);
+
+    //// Mate constraint : Concentric16[MateConcentric] type : 1 align : 1 flip : False
+    ////   Entity 0: C::E name : body_6, SW name : arm_flip - 5, SW ref.type : 2 (2)
+    ////   Entity 1: C::E name : body_9, SW name : wheel - 5, SW ref.type : 2 (2)
+    auto link16 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link16->SetConstrainedCoords(true, true, false, false, false, false);
+    linkLoc = ChVector<>(-0.542475205968926, 0.088870095234598, -98.46e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link16->Initialize(body_6, body_9, ChFrame<>(linkLoc, linkRot));
+    link16->SetName("Concentric16");
+    //sys.Add(link16);
+
+    //// Mate constraint : Concentric17[MateConcentric] type : 1 align : 0 flip : False
+    ////   Entity 0: C::E name : body_5, SW name : arm_flip - 6, SW ref.type : 2 (2)
+    ////   Entity 1: C::E name : body_8, SW name : wheel - 4, SW ref.type : 2 (2)
+    auto link18 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link18->SetConstrainedCoords(true, true, true, true, true, false);
+    linkLoc = ChVector<>(0.543529533816517, 0.0884153213366434, 96.04e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link18->Initialize(body_5, body_8, ChFrame<>(linkLoc, linkRot));
+    link18->SetName("Concentric17");
+    sys.Add(link18);
+
+    // Mate constraint : Concentric19[MateConcentric] type : 1 align : 1 flip : False
+    //   Entity 0: C::E name : body_7, SW name : arm - 5, SW ref.type : 2 (2)
+    //   Entity 1: C::E name : body_8, SW name : wheel - 4, SW ref.type : 2 (2)
+    auto link20 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link20->SetConstrainedCoords(true, true, false, false, false, false);
+    linkLoc = ChVector<>(0.543529533816517, 0.0884153213366434, -97.96e-3);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link20->Initialize(body_7, body_8, ChFrame<>(linkLoc, linkRot));
+    link20->SetName("Concentric19");
+    //sys.Add(link20);
+
+    // Make sure chassis is always parallel with ground
+    auto link21 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link21->SetConstrainedCoords(false, false, false, true, false, false);
+    linkLoc = ChVector<>(-0.000153205702430964, 0.13205571060813, -0.000959909868418846);
+    linkRot = ChQuaternion<>(1, 0, 0, 0);
+    link21->Initialize(body_1, my_ground, ChFrame<>(linkLoc, linkRot));
+    link21->SetName("parallel1");
+    sys.Add(link21);
+
+    // Suspension properties
+    float springK = 315228;
+    float springB = 0.05 * springK;
+  
+    // Front suspension
+    auto link22 = chrono_types::make_shared<ChLinkTSDA>();
+    linkLoc = ChVector<>(-372.48e-3, 115.89e-3, -0.96e-3);
+    linkLoc2 = ChVector<>(-377.33e-3, 277.87e-3, -0.96e-3);
+    link22->Initialize(body_4, body_2, false, linkLoc, linkLoc2);
+    link22->SetRestLength(0.165);
+    link22->SetSpringCoefficient(springK);
+    link22->SetDampingCoefficient(springB);
+    //link22->IsStiff(true);
+    link22->AddVisualShape(chrono_types::make_shared<ChSpringShape>(0.025, 80, 8));
+    sys.Add(link22);
+
+    // Rear suspension
+    auto link23 = chrono_types::make_shared<ChLinkTSDA>();
+    linkLoc = ChVector<>(372.56e-3, 109.81e-3, -0.96e-3);
+    linkLoc2 = ChVector<>(377.39e-3, 273.53e-3, -0.96e-3);
+    link23->Initialize(body_5, body_1, false, linkLoc, linkLoc2);
+    link23->SetRestLength(0.165);
+    link23->SetSpringCoefficient(springK);
+    link23->SetDampingCoefficient(springB);
+    //link23->IsStiff(true);
+    link23->AddVisualShape(chrono_types::make_shared<ChSpringShape>(0.025, 80, 8));
+    sys.Add(link23);
+
+    //
     // This is needed if you want to see things in Irrlicht 3D view.
-    myapp.AssetBindAll();
-    myapp.AssetUpdateAll();
-    myapp.AddTypicalCamera(core::vector3df(-1.0f, 1.5f, 2.0f),core::vector3df(0.156558639120948, 0.45618860396864, 0.825935792342213));
+    //
+    ChVector<>chassisPos = body_1->GetPos();
+    double x = body_1->GetPos().x();
+    double y = body_1->GetPos().y();
+    double z = body_1->GetPos().z();
+
+    vis->AttachSystem(&sys);
+    vis->EnableBodyFrameDrawing(true);
+    vis->EnableCollisionShapeDrawing(true);
+    vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
+    vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+    vis->AddCamera(ChVector<>(-1.0, 0.2, -1.0),chassisPos);
+    vis->SetSymbolScale(0.15);
+    vis->ShowInfoPanel(true);
+
+    //myapp.AssetBindAll();
+    //myapp.AssetUpdateAll();
+    //myapp.AddTypicalCamera(core::vector3df(x-1.0f, y+0.3, z+1.0),core::vector3df(x,y,z));
+    //myapp.SetShowInfos(true);
+    //myapp.SetPlotCollisionShapes(true);
+    //myapp.SetPlotLinkFrames(true);
+    //myapp.SetLinksDrawMode(irrlicht::IrrLinkDrawMode::LINK_REACT_FORCE);
+    //myapp.SetLinksLabelMode(irrlicht::IrrLinkLabelMode::LINK_REACT_FORCE_VAL);
+    //myapp.SetContactsDrawMode(irrlicht::IrrContactsDrawMode::CONTACT_FORCES);
+    //myapp.SetContactsLabelMode(irrlicht::IrrContactsLabelMode::CONTACT_FORCES_VAL);
+    //myapp.SetSymbolscale(0.15);
+    //myapp.SetPaused(true);
 
     // Do a linear static analysis.
-    myapp.GetSystem()->DoStaticLinear();    
+    //sys.DoStaticLinear();    
 
-    while (ID_current_example == 1 && myapp.GetDevice()->run()) {
-        myapp.BeginScene();
-        myapp.DrawAll();
-        myapp.DoStep();
-        myapp.EndScene();
+    while (vis->Run()) {
+        vis->BeginScene();
+        vis->Render();
+        sys.DoStepDynamics(5e-4);
+        vis->EndScene();
     }
 }
 
@@ -274,10 +450,10 @@ void Nami_MBD(ChIrrApp& myapp) {
 // Beam stress calculation of steering shaft based on MBD simulation
 //
 
-void Stem_Beam(ChIrrApp& myapp) {
+void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     // Clear previous demo, if any:
-    myapp.GetSystem()->Clear();
-    myapp.GetSystem()->SetChTime(0);
+    sys.Clear();
+    sys.SetChTime(0);
 
     // Create a mesh, that is a container for groups
     // of elements and their referenced nodes.
@@ -289,16 +465,16 @@ void Stem_Beam(ChIrrApp& myapp) {
     auto mesh5 = chrono_types::make_shared<ChMesh>();
     auto mesh6 = chrono_types::make_shared<ChMesh>();
     auto mesh7 = chrono_types::make_shared<ChMesh>();
-    myapp.GetSystem()->Add(mesh1);
-    myapp.GetSystem()->Add(mesh2);
-    myapp.GetSystem()->Add(mesh3);
-    myapp.GetSystem()->Add(mesh4);
-    myapp.GetSystem()->Add(mesh5);
-    myapp.GetSystem()->Add(mesh6);
-    myapp.GetSystem()->Add(mesh7);
+    sys.Add(mesh1);
+    sys.Add(mesh2);
+    sys.Add(mesh3);
+    sys.Add(mesh4);
+    sys.Add(mesh5);
+    sys.Add(mesh6);
+    sys.Add(mesh7);
 
     //mesh1->SetAutomaticGravity(true, 2);  // for max precision in gravity of FE, at least 2 integration points per element when using cubic IGA
-    myapp.GetSystem()->Set_G_acc(ChVector<>(0, -9.81, 0));
+    sys.Set_G_acc(ChVector<>(0, -9.81, 0));
 
     // Length of each beam segment
     double beam_L1 = 5e-3;
@@ -399,7 +575,7 @@ void Stem_Beam(ChIrrApp& myapp) {
     // Attach first node of this beam to last node of last beam
     auto joint12 = chrono_types::make_shared<ChLinkMateFix>();
     joint12->Initialize(node_end1, node_beg2);
-    myapp.GetSystem()->Add(joint12);
+    sys.Add(joint12);
 
     //
     // Section 3
@@ -441,7 +617,7 @@ void Stem_Beam(ChIrrApp& myapp) {
     // Attach first node of this beam to last node of last beam
     auto joint23 = chrono_types::make_shared<ChLinkMateFix>();
     joint23->Initialize(node_end2, node_beg3);
-    myapp.GetSystem()->Add(joint23);
+    sys.Add(joint23);
 
     //
     // Section 4
@@ -483,7 +659,7 @@ void Stem_Beam(ChIrrApp& myapp) {
     // Attach first node of this beam to last node of last beam
     auto joint34 = chrono_types::make_shared<ChLinkMateFix>();
     joint34->Initialize(node_end3, node_beg4);
-    myapp.GetSystem()->Add(joint34);
+    sys.Add(joint34);
 
     //
     // Section 5
@@ -525,7 +701,7 @@ void Stem_Beam(ChIrrApp& myapp) {
     // Attach first node of this beam to last node of last beam
     auto joint45 = chrono_types::make_shared<ChLinkMateFix>();
     joint45->Initialize(node_end4, node_beg5);
-    myapp.GetSystem()->Add(joint45);
+    sys.Add(joint45);
 
     //
     // Section 6
@@ -567,7 +743,7 @@ void Stem_Beam(ChIrrApp& myapp) {
     // Attach first node of this beam to last node of last beam
     auto joint56 = chrono_types::make_shared<ChLinkMateFix>();
     joint56->Initialize(node_end5, node_beg6);
-    myapp.GetSystem()->Add(joint56);
+    sys.Add(joint56);
 
     //
     // Section 7
@@ -609,13 +785,13 @@ void Stem_Beam(ChIrrApp& myapp) {
     // Attach first node of this beam to last node of last beam
     auto joint67 = chrono_types::make_shared<ChLinkMateFix>();
     joint67->Initialize(node_end6, node_beg7);
-    myapp.GetSystem()->Add(joint67);
+    sys.Add(joint67);
 
     //
     // Create the fixed headset
     auto headset = chrono_types::make_shared<ChBody>();
     headset->SetBodyFixed(true);
-    myapp.GetSystem()->Add(headset);
+    sys.Add(headset);
 
     // Create the lower bearing
     ChMatrixNM<double, 6, 6> bearing_K;
@@ -641,18 +817,18 @@ void Stem_Beam(ChIrrApp& myapp) {
 
     // Bushings are inherited from ChLoad, so they require a 'load container'
     auto load_container = chrono_types::make_shared<ChLoadContainer>();
-    myapp.GetSystem()->Add(load_container);
+    sys.Add(load_container);
 
     // Attach dummy body to mid node of beam
     auto dummyL = chrono_types::make_shared<ChBody>();
     dummyL->SetMass(1e-3);
     dummyL->SetBodyFixed(false);
     dummyL->SetPos(ChVector<>(48.25e-3, 0.0, 0.0));
-    myapp.GetSystem()->Add(dummyL);
+    sys.Add(dummyL);
 
     auto dummy3L = chrono_types::make_shared<ChLinkMateFix>();
     dummy3L->Initialize(node_mid3, dummyL);
-    myapp.GetSystem()->Add(dummy3L);
+    sys.Add(dummy3L);
 
     auto bushing_generic = chrono_types::make_shared<ChLoadBodyBodyBushingGeneric>(
         headset,                                        // body A
@@ -666,149 +842,205 @@ void Stem_Beam(ChIrrApp& myapp) {
     load_container->Add(bushing_generic);
 
     // Attach a visualization of the FEM mesh.
-    auto mvisualizebeamA = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh1.get()));
-    mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA = chrono_types::make_shared<ChVisualShapeFEA>(mesh1);
+    mvisualizebeamA->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA->SetSmoothFaces(true);
     mvisualizebeamA->SetBeamResolutionSection(100);
-    mvisualizebeamA->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    //mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA->SetSymbolsThickness(0.001);
     mvisualizebeamA->SetSymbolsScale(0.01);
     mvisualizebeamA->SetZbufferHide(false);
-    mesh1->AddAsset(mvisualizebeamA);
+    mesh1->AddVisualShapeFEA(mvisualizebeamA);
 
-    auto mvisualizebeamA2 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh2.get()));
-    mvisualizebeamA2->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA2 = chrono_types::make_shared<ChVisualShapeFEA>(mesh2);
+    mvisualizebeamA2->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA2->SetSmoothFaces(true);
-    mvisualizebeamA2 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh2.get()));
-    mvisualizebeamA2->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    //mvisualizebeamA2->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA2 = chrono_types::make_shared<ChVisualShapeFEA>(mesh2);
+    mvisualizebeamA2->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA2->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA2->SetSymbolsThickness(0.001);
     mvisualizebeamA2->SetSymbolsScale(0.01);
     mvisualizebeamA2->SetZbufferHide(false);
-    mesh2->AddAsset(mvisualizebeamA2);
+    mesh2->AddVisualShapeFEA(mvisualizebeamA2);
 
-    auto mvisualizebeamA3 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh3.get()));
-    mvisualizebeamA3->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA3 = chrono_types::make_shared<ChVisualShapeFEA>(mesh3);
+    mvisualizebeamA3->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA3->SetSmoothFaces(true);
-    mvisualizebeamA3 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh3.get()));
-    mvisualizebeamA3->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    mvisualizebeamA3->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA3 = chrono_types::make_shared<ChVisualShapeFEA>(mesh3);
+    mvisualizebeamA3->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA3->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA3->SetSymbolsThickness(0.001);
     mvisualizebeamA3->SetSymbolsScale(0.01);
     mvisualizebeamA3->SetZbufferHide(false);
-    mesh3->AddAsset(mvisualizebeamA3);
+    mesh3->AddVisualShapeFEA(mvisualizebeamA3);
 
-    auto mvisualizebeamA4 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh4.get()));
-    mvisualizebeamA4->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA4 = chrono_types::make_shared<ChVisualShapeFEA>(mesh4);
+    mvisualizebeamA4->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA4->SetSmoothFaces(true);
-    mvisualizebeamA4 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh4.get()));
-    mvisualizebeamA4->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    //mvisualizebeamA4->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA4 = chrono_types::make_shared<ChVisualShapeFEA>(mesh4);
+    mvisualizebeamA4->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA4->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA4->SetSymbolsThickness(0.001);
     mvisualizebeamA4->SetSymbolsScale(0.01);
     mvisualizebeamA4->SetZbufferHide(false);
-    mesh4->AddAsset(mvisualizebeamA4);
+    mesh4->AddVisualShapeFEA(mvisualizebeamA4);
 
-    auto mvisualizebeamA5 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh5.get()));
-    mvisualizebeamA5->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA5 = chrono_types::make_shared<ChVisualShapeFEA>(mesh5);
+    mvisualizebeamA5->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA5->SetSmoothFaces(true);
-    mvisualizebeamA5 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh5.get()));
-    mvisualizebeamA5->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    //mvisualizebeamA5->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA5 = chrono_types::make_shared<ChVisualShapeFEA>(mesh5);
+    mvisualizebeamA5->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA5->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA5->SetSymbolsThickness(0.001);
     mvisualizebeamA5->SetSymbolsScale(0.01);
     mvisualizebeamA5->SetZbufferHide(false);
-    mesh5->AddAsset(mvisualizebeamA5);
+    mesh5->AddVisualShapeFEA(mvisualizebeamA5);
 
-    auto mvisualizebeamA6 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh6.get()));
-    mvisualizebeamA6->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA6 = chrono_types::make_shared<ChVisualShapeFEA>(mesh6);
+    mvisualizebeamA6->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA6->SetSmoothFaces(true);
-    mvisualizebeamA6 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh6.get()));
-    mvisualizebeamA6->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    mvisualizebeamA6->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA6 = chrono_types::make_shared<ChVisualShapeFEA>(mesh6);
+    mvisualizebeamA6->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA6->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA6->SetSymbolsThickness(0.001);
     mvisualizebeamA6->SetSymbolsScale(0.01);
     mvisualizebeamA6->SetZbufferHide(false);
-    mesh6->AddAsset(mvisualizebeamA6);
+    mesh6->AddVisualShapeFEA(mvisualizebeamA6);
 
-    auto mvisualizebeamA7 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh7.get()));
-    mvisualizebeamA7->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    auto mvisualizebeamA7 = chrono_types::make_shared<ChVisualShapeFEA>(mesh7);
+    mvisualizebeamA7->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
     mvisualizebeamA7->SetSmoothFaces(true);
-    mvisualizebeamA7 = chrono_types::make_shared<ChVisualizationFEAmesh>(*(mesh7.get()));
-    mvisualizebeamA7->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
-    //mvisualizebeamA7->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizebeamA7 = chrono_types::make_shared<ChVisualShapeFEA>(mesh7);
+    mvisualizebeamA7->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    //mvisualizebeamA7->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
     mvisualizebeamA7->SetSymbolsThickness(0.001);
     mvisualizebeamA7->SetSymbolsScale(0.01);
     mvisualizebeamA7->SetZbufferHide(false);
-    mesh7->AddAsset(mvisualizebeamA7);
+    mesh7->AddVisualShapeFEA(mvisualizebeamA7);
 
     // This is needed if you want to see things in Irrlicht 3D view.
-    myapp.AssetBindAll();
-    myapp.AssetUpdateAll();
-    myapp.AddTypicalCamera(core::vector3df(-0.1f, 0.2f, -0.2f));
+    vis->AttachSystem(&sys);
+
+    //myapp.AddTypicalCamera(core::vector3df(-0.1f, 0.2f, -0.2f));
 
     std::string filename = out_dir + "/rotor_displ.dat";
     chrono::ChStreamOutAsciiFile file_out1(filename.c_str());
 
     // Set to a more precise HHT timestepper if needed
-    //myapp.GetSystem()->SetTimestepperType(ChTimestepper::Type::HHT);
-    if (auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(myapp.GetSystem()->GetTimestepper())) {
+    //sys.SetTimestepperType(ChTimestepper::Type::HHT);
+    if (auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(sys.GetTimestepper())) {
         mystepper->SetStepControl(false);
         mystepper->SetModifiedNewton(false);
     }
 
     //myapp.SetTimestep(0.001);
-    myapp.GetSystem()->DoStaticLinear();
-    //myapp.GetSystem()->DoFullAssembly();
-    //myapp.GetSystem()->DoStepDynamics(1e-3);
+    sys.DoStaticLinear();
+    //sys.DoFullAssembly();
+    //sys.DoStepDynamics(1e-3);
 
-    while (ID_current_example == 2 && myapp.GetDevice()->run()) {
-        myapp.BeginScene();
-        myapp.DrawAll();
-        myapp.DoStep();
-        //file_out1 << myapp.GetSystem()->GetChTime() << " " << node_mid1->GetPos().y() << " " << node_mid1->GetPos().z()
-        //    << "\n";
-        myapp.EndScene();
+    while (vis->Run()) {
+        vis->BeginScene();
+        vis->Render();
+        sys.DoStepDynamics(1e-3);
+        vis->EndScene();
     }
 }
 
 /// Following class will be used to manage events from the user interface
 
-class MyEventReceiver : public IEventReceiver {
-public:
-    MyEventReceiver(ChIrrApp* myapp) {
-        // store pointer to physical system & other stuff so we can tweak them by user keyboard
-        app = myapp;
+void Constraint_Test(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
+
+    // Gravity
+    sys.Set_G_acc(ChVector<>(0, -9.81, 0));
+
+    // Create body 1
+    auto mat = chrono_types::make_shared<ChMaterialSurfaceSMC>();
+    mat->SetFriction(1.0f);
+    auto b1 = chrono_types::make_shared<ChBodyEasyBox>(.5, .5, .5, 1000, true, true, mat);
+    sys.Add(b1);
+    b1->SetPos(ChVector<>(0, 0, 0));
+    b1->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/asphalt.jpg"));
+
+    // Create body 2
+    auto b2 = chrono_types::make_shared<ChBodyEasyBox>(.5, .5, .5, 1000, true, true, mat);
+    sys.Add(b2);
+    b2->SetPos(ChVector<>(0., .75, 0));
+    b2->SetBodyFixed(true);
+    b2->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/asphalt.jpg"));
+
+    // Constrain the two bodies
+    ChVector<> cA;
+    ChVector<> dA;
+    ChVector<> cB;
+    ChVector<> dB;
+
+    auto fixed = chrono_types::make_shared<ChLinkMateGeneric>();
+    fixed->SetConstrainedCoords(true, true, true, true, true, true);
+    cA = (0., 0.5, 0.);
+    cB = (0., 0.5, 0.);
+    dA = (0., 0., 0.);
+    dB = (0., 0., 0.);
+    fixed->Initialize(b1, b2, false, cA, cB, dA, dB);
+    sys.Add(fixed);
+
+
+    //
+    // This is needed if you want to see things in Irrlicht 3D view.
+    //
+    vis->AttachSystem(&sys);
+    vis->SetWindowSize(1600, 1200);
+    vis->SetWindowTitle("Forklift demo");
+    vis->Initialize();
+    vis->AddLogo();
+    vis->AddSkyBox();
+    vis->AddTypicalLights();
+    vis->AddCamera(ChVector<>(-6, 3, -6));
+
+    // Do a linear static analysis.
+    sys.DoStaticLinear();    
+
+    while (vis->Run()) {
+        vis->BeginScene();
+        vis->Render();
+        sys.DoStepDynamics(1e-4);
+        vis->EndScene();
     }
-
-    bool OnEvent(const SEvent& event) {
-        // check if user presses keys
-        if (event.EventType == irr::EET_KEY_INPUT_EVENT && !event.KeyInput.PressedDown) {
-            switch (event.KeyInput.Key) {
-            case irr::KEY_KEY_1:
-                ID_current_example = 1;
-                return true;
-            case irr::KEY_KEY_2:
-                ID_current_example = 2;
-                return true;
-            case irr::KEY_KEY_3:
-                ID_current_example = 3;
-                return true;
-            case irr::KEY_KEY_4:
-                ID_current_example = 4;
-                return true;
-            default:
-                break;
-            }
-        }
-
-        return false;
-    }
-
-private:
-    ChIrrApp* app;
-};
+}
+//class MyEventReceiver : public IEventReceiver {
+//public:
+//    MyEventReceiver(ChIrrApp* myapp) {
+//        // store pointer to physical system & other stuff so we can tweak them by user keyboard
+//        app = myapp;
+//    }
+//
+//    bool OnEvent(const SEvent& event) {
+//        // check if user presses keys
+//        if (event.EventType == irr::EET_KEY_INPUT_EVENT && !event.KeyInput.PressedDown) {
+//            switch (event.KeyInput.Key) {
+//            case irr::KEY_KEY_1:
+//                ID_current_example = 1;
+//                return true;
+//            case irr::KEY_KEY_2:
+//                ID_current_example = 2;
+//                return true;
+//            case irr::KEY_KEY_3:
+//                ID_current_example = 3;
+//                return true;
+//            case irr::KEY_KEY_4:
+//                ID_current_example = 4;
+//                return true;
+//            default:
+//                break;
+//            }
+//        }
+//
+//        return false;
+//    }
+//
+//private:
+//    ChIrrApp* app;
+//};
 
 int main(int argc, char* argv[]) {
     GetLog() << "Copyright (c) 2017 projectchrono.org\nChrono version: " << CHRONO_VERSION << "\n\n";
@@ -820,63 +1052,80 @@ int main(int argc, char* argv[]) {
     }
 
     // Create a Chrono::Engine physical system
-    ChSystemSMC my_system;
+    ChSystemSMC sys;
+    std::string models[] = { "Nami MBD", "Beam", "Constraint Test"};
+
+    int which = 1;
+    std::cout << "Options:\n";
+    for (int i = 1; i <= 3; i++)
+        std::cout << i << "  " << models[i - 1] << std::endl;
+    std::cin >> which;
+    std::cout << std::endl;
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
-    ChIrrApp application(&my_system, L"Nami Burn E Simulator",
-        core::dimension2d<u32>(1900, 1200));
+    ChClampValue(which, 1, 4);
 
-    // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
-    application.AddTypicalLogo();
-    application.AddTypicalSky();
-    application.AddTypicalLights(irr::core::vector3df(30.f, 100.f, 30.f), irr::core::vector3df(30.f, 80.f, -30.f), 180,
-        190, irr::video::SColorf(0.5f, 0.5f, 0.5f, 1.0f),
-        irr::video::SColorf(0.2f, 0.3f, 0.4f, 1.0f));
-
-    // This is for GUI tweaking of system parameters..
-    MyEventReceiver receiver(&application);
-    // note how to add a custom event receiver to the default interface:
-    application.SetUserEventReceiver(&receiver);
-
-    // Some help on the screen
-    application.GetIGUIEnvironment()->addStaticText(
-        L" Press 1: MBD Scooter \n "
-        L" Press 2: Nami Shaft",
-        irr::core::rect<irr::s32>(10, 80, 250, 150), false, true, 0);
+    // Create the Irrlicht visualization system
+    auto vis = chrono_types::make_shared<ChVisualSystemIrrlicht>();
+    vis->SetWindowSize(1600, 1200);
+    vis->SetWindowTitle(models[which - 1]);
+    vis->Initialize();
+    vis->AddLogo();
+    vis->AddSkyBox();
+    vis->AddLight(ChVector<>(30, 100, 30), 180, ChColor(0.5f, 0.5f, 0.5f));
+    vis->AddLight(ChVector<>(30, 80, -30), 190, ChColor(0.2f, 0.3f, 0.4f));
+    
+    //// Some help on the screen
+    //application.GetIGUIEnvironment()->addStaticText(
+    //    L" Press 1: MBD Scooter \n "
+    //    L" Press 2: Nami Shaft \n "
+    //    L" Press 3: Constraint Test",
+    //    irr::core::rect<irr::s32>(10, 80, 250, 150), false, true, 0);
 
     // Solver default settings for all the sub demos:
     auto solver = chrono_types::make_shared<ChSolverMINRES>();
-    my_system.SetSolver(solver);
-    solver->SetMaxIterations(500);
-    solver->SetTolerance(1e-15);
+    solver->SetMaxIterations(1000);
+    solver->SetTolerance(1e-18);
     solver->EnableDiagonalPreconditioner(true);
     solver->EnableWarmStart(true);  // IMPORTANT for convergence when using EULER_IMPLICIT_LINEARIZED
     solver->SetVerbose(false);
-    my_system.SetSolverForceTolerance(1e-14);
+    sys.SetSolverForceTolerance(1e-18);
+
+    //sys.SetSolverType(ChSolver::Type::BARZILAIBORWEIN);
+    sys.SetSolverMaxIterations(1000);
+    sys.SetMaxiter(1000);
+    sys.SetMaxPenetrationRecoverySpeed(0.1);
+    sys.SetStiffContact(false);
+    
+    // Change type of integrator:
+    sys.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT);  // fast, less precise
+    //sys.SetTimestepperType(chrono::ChTimestepper::Type::HHT);  // precise,slower, might iterate each step
+
 
 #ifdef USE_MKL
     auto mkl_solver = chrono_types::make_shared<ChSolverPardisoMKL>();
-    my_system.SetSolver(mkl_solver);
+    sys.SetSolver(mkl_solver);
 #endif
 
-    application.SetTimestep(0.001);
+    //sys.SetTimestep(1e-4);
 
     // Run the sub-demos:
 
     while (true) {
         switch (ID_current_example) {
         case 1:
-            Nami_MBD(application);
+            Nami_MBD(sys,vis);
             break;
         case 2:
-            Stem_Beam(application);
+            Stem_Beam(sys,vis);
+            break;
+        case 3:
+            Constraint_Test(sys,vis);
             break;
         default:
             break;
         }
-        if (!application.GetDevice()->run())
-            break;
     }
 
     return 0;
