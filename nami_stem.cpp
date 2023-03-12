@@ -16,6 +16,7 @@
 #include "chrono/physics/ChLoadContainer.h"
 #include "chrono/physics/ChLoadsBody.h"
 #include "chrono/physics/ChBodyEasy.h"
+#include "chrono/physics/ChForce.h"
 #include "chrono/physics/ChLinkMotorLinearPosition.h"
 #include "chrono/timestepper/ChTimestepper.h"
 #include "chrono/timestepper/ChTimestepperHHT.h"
@@ -49,18 +50,24 @@ using namespace chrono::irrlicht;
 
 using namespace irr;
 
-int ID_current_example = 1;
-
 const std::string out_dir = GetChronoOutputPath() + "NAMI_SIM";
 
+// Calculate max Von Mises stress present in beam given internal forces at beam center section
+void von_mises(ChVector<> forces, ChVector<> moments, ChBeamSectionCosserat section, double stress) {
+
+    
+}
 //
 // MBD Simulation of Nami under typical driving conditions
 //
 
 void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
+    sys.Clear();
+    sys.SetChTime(0);
 
     // Gravity
     sys.Set_G_acc(ChVector<>(0, -9.81, 0));
+    bool use_beam_column = true;
 
     // 90 degree rotation about x
     ChMatrix33<> rotx90;
@@ -71,18 +78,40 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     // Create ground
     auto ground_mat = chrono_types::make_shared<ChMaterialSurfaceSMC>();
     ground_mat->SetFriction(0.6f);
-    ground_mat->SetRestitution(0.01);
+    ground_mat->SetRestitution(0.01f);
     ground_mat->SetYoungModulus(1e9);
     ground_mat->SetKn(1e9);
     ground_mat->SetGn(1e4);
     ground_mat->SetKt(1e9);
     ground_mat->SetGt(1e4);
 
-    auto my_ground = chrono_types::make_shared<ChBodyEasyBox>(5, 2, 5, 100, true, true, ground_mat);
+    // Tire material
+    auto tire_mat = chrono_types::make_shared<ChMaterialSurfaceSMC>();
+    tire_mat->SetFriction(0.6f);
+    tire_mat->SetRestitution(0.02f);
+    tire_mat->SetYoungModulus(5e6);
+    tire_mat->SetGn(1e4);
+
+    auto my_ground = chrono_types::make_shared<ChBodyEasyBox>(50, 2, 5, 100, true, true, ground_mat);
     sys.Add(my_ground);
-    my_ground->SetPos(ChVector<>(0, -1.07, 0));
+    my_ground->SetPos(ChVector<>(-23, -1.062, 0));
     my_ground->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/asphalt.jpg"));
     my_ground->SetBodyFixed(true);
+
+    double bump_height = 50e-3;
+    auto bump = chrono_types::make_shared<ChBodyEasyBox>(1, 2, 5, 100, true, true, ground_mat);
+    sys.Add(bump);
+    bump->SetPos(ChVector<>(-10, -1.062 + bump_height, 0));
+    bump->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/rock.jpg"));
+    bump->SetBodyFixed(true);
+
+    // Rider
+    double cyl_height = 0.75;
+    double cyl_weight = 70;
+    double cyl_dens = cyl_weight / (CH_C_PI * cyl_height * 0.2 * 0.2);
+    auto rider = chrono_types::make_shared<ChBodyEasyCylinder>(.2,cyl_height,cyl_dens); // R, h, density
+    rider->SetPos(ChVector<>(0,0.132 + 0.105 +0.5*cyl_height,-0.96e-3));
+    sys.Add(rider);
 
     // Chassis
     auto body_1 = chrono_types::make_shared<ChBodyAuxRef>();
@@ -94,7 +123,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_1->SetInertiaXX(ChVector<>(0.211032654183116, 0.840433909604176, 0.776593634576472));
     body_1->SetInertiaXY(ChVector<>(0.0840281413530399, 5.21145927264413e-07, 1.99941031245599e-07));
     body_1->SetFrame_COG_to_REF(ChFrame<>(offset_body_1, ChQuaternion<>(1, 0, 0, 0)));
-    body_1->SetBodyFixed(false);
 
     auto body_1_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_1_mesh->SetFilename("nami_shapes/body_1_1.obj");
@@ -111,7 +139,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_2->SetInertiaXX(ChVector<>(0.000711276612673922, 0.00312139605227589, 0.0034220703448989));
     body_2->SetInertiaXY(ChVector<>(0.00103955558775492, 2.71870866303574e-10, 8.62523753592826e-11));
     body_2->SetFrame_COG_to_REF(ChFrame<>(offset_body_2, ChQuaternion<>(1, 0, 0, 0)));
-    body_2->SetBodyFixed(false);
 
     auto body_2_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_2_mesh->SetFilename("nami_shapes/body_2_1.obj");
@@ -128,12 +155,13 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_3->SetInertiaXX(ChVector<>(7.87091137170849e-06, 0.000342730583576364, 0.000342809496891776));
     body_3->SetInertiaXY(ChVector<>(1.47055514339957e-11, -9.33444937294475e-11, -2.09790201222582e-08));
     body_3->SetFrame_COG_to_REF(ChFrame<>(offset_body_3, ChQuaternion<>(1, 0, 0, 0)));
-    body_3->SetBodyFixed(false);
 
     auto body_3_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_3_mesh->SetFilename("nami_shapes/body_3_1.obj");
     body_3->AddVisualShape(body_3_mesh, ChFrame<>(ChVector<>(0, 0, 0), QUNIT));
-    sys.Add(body_3);
+    if (!use_beam_column) {
+        sys.Add(body_3);
+    }
 
     // arm-4
     auto body_4 = chrono_types::make_shared<ChBodyAuxRef>();
@@ -145,7 +173,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_4->SetInertiaXX(ChVector<>(0.00046403577993344, 0.00177359879331494, 0.00202743171460841));
     body_4->SetInertiaXY(ChVector<>(-0.000319455738292545, 0.000371746880238153, 4.28320335378637e-05));
     body_4->SetFrame_COG_to_REF(ChFrame<>(offset_body_4, ChQuaternion<>(1, 0, 0, 0)));
-    body_4->SetBodyFixed(false);
 
     auto body_4_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_4_mesh->SetFilename("nami_shapes/body_4_1.obj");
@@ -162,7 +189,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_5->SetInertiaXX(ChVector<>(0.000788264266944777, 0.0014493703063036, 0.00202743171460841));
     body_5->SetInertiaXY(ChVector<>(0.000649249945254572, -0.000338930230322529, 0.000158608401534427));
     body_5->SetFrame_COG_to_REF(ChFrame<>(offset_body_5, ChQuaternion<>(1, 0, 0, 0)));
-    body_5->SetBodyFixed(false);
 
     auto body_5_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_5_mesh->SetFilename("nami_shapes/body_5_1.obj");
@@ -179,7 +205,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_6->SetInertiaXX(ChVector<>(0.000464035779933438, 0.00177359879331494, 0.00202743171460841));
     body_6->SetInertiaXY(ChVector<>(-0.000319455738292542, -0.000371746880238153, -4.28320335378627e-05));
     body_6->SetFrame_COG_to_REF(ChFrame<>(offset_body_6, ChQuaternion<>(1, 0, 0, 0)));
-    body_6->SetBodyFixed(false);
 
     auto body_6_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_6_mesh->SetFilename("nami_shapes/body_5_1.obj");
@@ -196,7 +221,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_7->SetInertiaXX(ChVector<>(0.000788264266944779, 0.0014493703063036, 0.00202743171460841));
     body_7->SetInertiaXY(ChVector<>(0.000649249945254574, 0.000338930230322528, -0.000158608401534428));
     body_7->SetFrame_COG_to_REF(ChFrame<>(offset_body_7, ChQuaternion<>(1, 0, 0, 0)));
-    body_7->SetBodyFixed(false);
 
     auto body_7_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_7_mesh->SetFilename("nami_shapes/body_4_1.obj");
@@ -213,7 +237,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_8->SetInertiaXX(ChVector<>(0.0243908244677193, 0.0243908244677193, 0.044549951549361));
     body_8->SetInertiaXY(ChVector<>(0.000649249945254573, -0.000338930230322529, 0.000158608401534427));
     body_8->SetFrame_COG_to_REF(ChFrame<>(offset_body_8, ChQuaternion<>(1, 0, 0, 0)));
-    body_8->SetBodyFixed(false);
 
     auto body_8_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_8_mesh->SetFilename("nami_shapes/body_8_1.obj");
@@ -222,7 +245,7 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
 
     // Add collision shape for wheel
     body_8->GetCollisionModel()->ClearModel();
-    body_8->GetCollisionModel()->AddCylinder(ground_mat, .14, 0.14, 0.038, ChVector<>(0.0, 0.0, 0.0), rotx90);
+    body_8->GetCollisionModel()->AddCylinder(tire_mat, .14, 0.14, 0.038, ChVector<>(0.0, 0.0, 0.0), rotx90);
     body_8->GetCollisionModel()->BuildModel();
     body_8->SetCollide(true);
     body_8->SetShowCollisionMesh(true);
@@ -237,7 +260,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     body_9->SetInertiaXX(ChVector<>(0.0243908244677193, 0.0243908244677193, 0.044549951549361));
     body_9->SetInertiaXY(ChVector<>(-3.90251912334428e-36, -1.0549013599092e-21, -3.19417347876837e-18));
     body_9->SetFrame_COG_to_REF(ChFrame<>(offset_body_9, ChQuaternion<>(1, 0, 0, 0)));
-    body_9->SetBodyFixed(false);
 
     auto body_9_mesh = chrono_types::make_shared<ChModelFileShape>();
     body_9_mesh->SetFilename("nami_shapes/body_8_1.obj");
@@ -246,7 +268,7 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
 
     // Add collision shape for wheel
     body_9->GetCollisionModel()->ClearModel();
-    body_9->GetCollisionModel()->AddCylinder(ground_mat, .14, 0.14, 0.038, ChVector<>(0.0, 0.0, 0.0), rotx90);
+    body_9->GetCollisionModel()->AddCylinder(tire_mat, .14, 0.14, 0.038, ChVector<>(0.0, 0.0, 0.0), rotx90);
     body_9->GetCollisionModel()->BuildModel();
     body_9->SetCollide(true);
     body_9->SetShowCollisionMesh(true);
@@ -258,27 +280,61 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     ChQuaternion<> linkRot;
     ChVector<> linkLoc2;
 
-    // Mate constraint : Concentric1[MateConcentric] type : 1 align : 0 flip : False
-    //   Entity 0: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
-    //   Entity 1: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
-    auto link2 = chrono_types::make_shared<ChLinkMateGeneric>();
-    link2->SetConstrainedCoords(true, true, true, true, true, true);
-    linkLoc = ChVector<>(-0.496994002644769, 0.396005254527576, -0.000959909868418846);
-    linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
-    link2->Initialize(body_3, body_2, ChFrame<>(linkLoc, linkRot));
-    link2->SetName("Concentric1");
-    sys.Add(link2);
+    // Bearing stiffness and damping matrices
+    ChMatrixNM<double, 6, 6> bearing_K;
+    ChMatrixNM<double, 6, 6> bearing_R;
 
-    // Mate constraint : Concentric3[MateConcentric] type : 1 align : 1 flip : False
-    //   Entity 0: C::E name : body_1, SW name : Chassis - 2, SW ref.type : 2 (2)
-    //   Entity 1: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
-    auto link4 = chrono_types::make_shared<ChLinkMateGeneric>();
-    link4->SetConstrainedCoords(true, true, true, true, true, true);
+    bearing_K.setZero();
+    bearing_R.setZero();
+
+    // Translational terms
+    for (unsigned int ii = 0; ii < 3; ii++) {
+        bearing_K(ii, ii) = 1e8;
+        bearing_R(ii, ii) = 5e4;
+    }
+
+    // Rotational terms
+    for (unsigned int ii = 3; ii < 6; ii++) {
+        bearing_K(ii, ii) = 1e6;
+        bearing_R(ii, ii) = 5e2;
+    }
+
+    bearing_K(5, 5) = 1e4;
+
+    // Bushings are inherited from ChLoad, so they require a 'load container'
+    auto load_container = chrono_types::make_shared<ChLoadContainer>();
+    sys.Add(load_container);
+
+    // Lower bearing
     linkLoc = ChVector<>(-0.56914720800737, 0.106614554165759, -0.000959909868418846);
     linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
-    link4->Initialize(body_1, body_3, ChFrame<>(linkLoc, linkRot));
-    link4->SetName("Concentric3");
-    sys.Add(link4);
+    auto bearing_lower_rigid = chrono_types::make_shared<ChLoadBodyBodyBushingGeneric>(
+        body_1, body_3, ChFrame<>(linkLoc, linkRot), bearing_K, bearing_R);
+    bearing_lower_rigid->SetNeutralForce(ChVector<>(0, 0, 0));
+    bearing_lower_rigid->NeutralDisplacement().SetPos(ChVector<>(0, 0, 0));
+
+
+    // Upper bearing
+    linkLoc = ChVector<>(-0.55342228479, 0.16968377637, -0.000959909868418846);
+    linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+    auto bearing_upper_rigid = chrono_types::make_shared<ChLoadBodyBodyBushingGeneric>(
+        body_1, body_3, ChFrame<>(linkLoc, linkRot), bearing_K, bearing_R);
+    bearing_upper_rigid->SetNeutralForce(ChVector<>(0, 0, 0));
+    bearing_upper_rigid->NeutralDisplacement().SetPos(ChVector<>(0, 0, 0));
+
+    // Mate constraint : Concentric3[MateConcentric] type : 1 align : 1 flip : False
+        //   Entity 0: C::E name : body_1, SW name : Chassis - 2, SW ref.type : 2 (2)
+        //   Entity 1: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+    //auto link4 = chrono_types::make_shared<ChLinkMateGeneric>();
+    //link4->SetConstrainedCoords(true, true, true, true, true, true);
+    //link4->SetName("Concentric3");
+
+    // Mate constraint : Concentric1[MateConcentric] type : 1 align : 0 flip : False
+        //   Entity 0: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+        //   Entity 1: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
+    auto link2 = chrono_types::make_shared<ChLinkMateGeneric>();
+    link2->SetConstrainedCoords(true, true, true, true, true, true);
+    link2->SetName("Concentric1");
 
     // Mate constraint : Concentric4[MateConcentric] type : 1 align : 1 flip : False
     //   Entity 0: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
@@ -287,7 +343,7 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     link6->SetConstrainedCoords(true, true, true, true, true, false);
     linkLoc = ChVector<>(-0.336039894563173, 0.229882372022162, -43.46e-3);
     linkRot = ChQuaternion<>(1, 0, 0, 0);
-    link6->Initialize(body_2, body_6, ChFrame<>(linkLoc,linkRot));
+    link6->Initialize(body_2, body_6, ChFrame<>(linkLoc, linkRot));
     link6->SetName("Concentric4");
     //sys.Add(link6);
 
@@ -296,7 +352,8 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     //   Entity 1: C::E name : body_4, SW name : arm - 4, SW ref.type : 2 (2)
     auto link8 = chrono_types::make_shared<ChLinkMateGeneric>();
     link8->SetConstrainedCoords(true, true, true, true, true, false);
-    linkLoc = ChVector<>(-0.336039894563173, 0.229882372022162, 40.74e-3);
+    //linkLoc = ChVector<>(-0.336039894563173, 0.229882372022162, 40.74e-3);
+    linkLoc = ChVector<>(-0.336039894563173, 0.229882372022162, -0.96e-3);
     linkRot = ChQuaternion<>(1, 0, 0, 0);
     link8->Initialize(body_2, body_4, ChFrame<>(linkLoc, linkRot));
     link8->SetName("Concentric5");
@@ -307,7 +364,8 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     ////   Entity 1: C::E name : body_5, SW name : arm_flip - 6, SW ref.type : 2 (2)
     auto link10 = chrono_types::make_shared<ChLinkMateGeneric>();
     link10->SetConstrainedCoords(true, true, true, true, true, false);
-    linkLoc = ChVector<>(0.332247148475558, 0.22205571060813, 30.04e-3);
+    //linkLoc = ChVector<>(0.332247148475558, 0.22205571060813, 30.04e-3);
+    linkLoc = ChVector<>(0.332247148475558, 0.22205571060813, -0.96e-3);
     linkRot = ChQuaternion<>(1, 0, 0, 0);
     link10->Initialize(body_1, body_5, ChFrame<>(linkLoc, linkRot));
     link10->SetName("Concentric8");
@@ -328,8 +386,9 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     ////   Entity 0: C::E name : body_4, SW name : arm - 4, SW ref.type : 2 (2)
     ////   Entity 1: C::E name : body_9, SW name : wheel - 5, SW ref.type : 2 (2)
     auto link14 = chrono_types::make_shared<ChLinkMateGeneric>();
-    link14->SetConstrainedCoords(true, true , true, true, true, false);
-    linkLoc = ChVector<>(-0.542475205968926, 0.088870095234598, 94.94e-3);
+    link14->SetConstrainedCoords(true, true, true, true, true, false);
+    //linkLoc = ChVector<>(-0.542475205968926, 0.088870095234598, 94.94e-3);
+    linkLoc = ChVector<>(-0.542475205968926, 0.088870095234598, -0.96e-3);
     linkRot = ChQuaternion<>(1, 0, 0, 0);
     link14->Initialize(body_4, body_9, ChFrame<>(linkLoc, linkRot));
     link14->SetName("Concentric12");
@@ -351,7 +410,8 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     ////   Entity 1: C::E name : body_8, SW name : wheel - 4, SW ref.type : 2 (2)
     auto link18 = chrono_types::make_shared<ChLinkMateGeneric>();
     link18->SetConstrainedCoords(true, true, true, true, true, false);
-    linkLoc = ChVector<>(0.543529533816517, 0.0884153213366434, 96.04e-3);
+    //linkLoc = ChVector<>(0.543529533816517, 0.0884153213366434, 96.04e-3);
+    linkLoc = ChVector<>(0.543529533816517, 0.0884153213366434, -0.96e-3);
     linkRot = ChQuaternion<>(1, 0, 0, 0);
     link18->Initialize(body_5, body_8, ChFrame<>(linkLoc, linkRot));
     link18->SetName("Concentric17");
@@ -370,7 +430,7 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
 
     // Make sure chassis is always parallel with ground
     auto link21 = chrono_types::make_shared<ChLinkMateGeneric>();
-    link21->SetConstrainedCoords(false, false, false, true, false, false);
+    link21->SetConstrainedCoords(false, false, false, true, true, false);
     linkLoc = ChVector<>(-0.000153205702430964, 0.13205571060813, -0.000959909868418846);
     linkRot = ChQuaternion<>(1, 0, 0, 0);
     link21->Initialize(body_1, my_ground, ChFrame<>(linkLoc, linkRot));
@@ -379,8 +439,8 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
 
     // Suspension properties
     float springK = 315228;
-    float springB = 0.05 * springK;
-  
+    float springB = 0.05f * springK;
+
     // Front suspension
     auto link22 = chrono_types::make_shared<ChLinkTSDA>();
     linkLoc = ChVector<>(-372.48e-3, 115.89e-3, -0.96e-3);
@@ -389,7 +449,6 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     link22->SetRestLength(0.165);
     link22->SetSpringCoefficient(springK);
     link22->SetDampingCoefficient(springB);
-    //link22->IsStiff(true);
     link22->AddVisualShape(chrono_types::make_shared<ChSpringShape>(0.025, 80, 8));
     sys.Add(link22);
 
@@ -401,49 +460,700 @@ void Nami_MBD(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     link23->SetRestLength(0.165);
     link23->SetSpringCoefficient(springK);
     link23->SetDampingCoefficient(springB);
-    //link23->IsStiff(true);
     link23->AddVisualShape(chrono_types::make_shared<ChSpringShape>(0.025, 80, 8));
     sys.Add(link23);
 
-    //
-    // This is needed if you want to see things in Irrlicht 3D view.
-    //
-    ChVector<>chassisPos = body_1->GetPos();
-    double x = body_1->GetPos().x();
-    double y = body_1->GetPos().y();
-    double z = body_1->GetPos().z();
+    // Rider and chassis
+    auto linkrider = chrono_types::make_shared<ChLinkMateGeneric>();
+    linkrider->SetConstrainedCoords(true, true, true, true, true, true);
+    linkrider->Initialize(body_1, rider, ChFrame<>(ChVector<>(0, 0.132 + 0.105, -0.96e-3), linkRot));
+    sys.Add(linkrider);
 
-    vis->AttachSystem(&sys);
-    vis->EnableBodyFrameDrawing(true);
-    vis->EnableCollisionShapeDrawing(true);
-    vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
-    vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
-    vis->AddCamera(ChVector<>(-1.0, 0.2, -1.0),chassisPos);
-    vis->SetSymbolScale(0.15);
-    vis->ShowInfoPanel(true);
+    double v_kph = 40;
+    double v_m_s = 0.2777778 * v_kph;
+    double wheel_Wvel = v_m_s / 0.14;
 
-    //myapp.AssetBindAll();
-    //myapp.AssetUpdateAll();
-    //myapp.AddTypicalCamera(core::vector3df(x-1.0f, y+0.3, z+1.0),core::vector3df(x,y,z));
-    //myapp.SetShowInfos(true);
-    //myapp.SetPlotCollisionShapes(true);
-    //myapp.SetPlotLinkFrames(true);
-    //myapp.SetLinksDrawMode(irrlicht::IrrLinkDrawMode::LINK_REACT_FORCE);
-    //myapp.SetLinksLabelMode(irrlicht::IrrLinkLabelMode::LINK_REACT_FORCE_VAL);
-    //myapp.SetContactsDrawMode(irrlicht::IrrContactsDrawMode::CONTACT_FORCES);
-    //myapp.SetContactsLabelMode(irrlicht::IrrContactsLabelMode::CONTACT_FORCES_VAL);
-    //myapp.SetSymbolscale(0.15);
-    //myapp.SetPaused(true);
+    // Set initial speeds for all bodies
+    body_1->SetPos_dt(Vector(-v_m_s, 0, 0));
+    body_2->SetPos_dt(Vector(-v_m_s, 0, 0));
+    body_3->SetPos_dt(Vector(-v_m_s, 0, 0));
+    body_4->SetPos_dt(Vector(-v_m_s, 0, 0));
+    body_5->SetPos_dt(Vector(-v_m_s, 0, 0));
+    body_8->SetPos_dt(Vector(-v_m_s, 0, 0));
 
-    // Do a linear static analysis.
-    //sys.DoStaticLinear();    
+    body_9->SetPos_dt(Vector(-v_m_s, 0, 0));
+    rider->SetPos_dt(Vector(-v_m_s, 0, 0));
 
-    while (vis->Run()) {
-        vis->BeginScene();
-        vis->Render();
-        sys.DoStepDynamics(5e-4);
-        vis->EndScene();
+    body_8->SetWvel_loc(Vector(0, 0, wheel_Wvel));
+    body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
+
+    // Use rigid body steering column if we don't want to use beam based steering column
+    if (!use_beam_column) {
+
+        // Mate constraint : Concentric1[MateConcentric] type : 1 align : 0 flip : False
+        //   Entity 0: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+        //   Entity 1: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
+        linkLoc = ChVector<>(-0.496994002644769, 0.396005254527576, -0.000959909868418846);
+        linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+        link2->Initialize(body_3, body_2, ChFrame<>(linkLoc, linkRot));
+        sys.Add(link2);
+
+        // Mate constraint : Concentric3[MateConcentric] type : 1 align : 1 flip : False
+        //   Entity 0: C::E name : body_1, SW name : Chassis - 2, SW ref.type : 2 (2)
+        //   Entity 1: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+        //linkLoc = ChVector<>(-0.56914720800737, 0.106614554165759, -0.000959909868418846);
+        //linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+        //link4->Initialize(body_1, body_3, ChFrame<>(linkLoc, linkRot));
+        //sys.Add(link4);
+
+        // Lower bearing
+        load_container->Add(bearing_lower_rigid);
+
+        // Upper bearing
+        load_container->Add(bearing_upper_rigid);
+
+        // Add things in Irrlicht 3D viewer.
+        vis->AttachSystem(&sys);
+        vis->EnableBodyFrameDrawing(true);
+        vis->EnableCollisionShapeDrawing(true);
+        //vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
+        vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+        vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
+        vis->SetSymbolScale(0.15);
+        vis->ShowInfoPanel(true);
+
+        // Do a linear static analysis.
+        //sys.DoStaticLinear();    
+
+        // Write output file and header
+        std::string filename = "columnForces.csv";
+        chrono::ChStreamOutAsciiFile file_out1(filename.c_str());
+        file_out1 << "time" << "," << "fx" << "," << "fy" << "," << "fz" << "," << "mx" << "," << "my" << "," << "mz" << "\n";
+
+        int ii = 1;
+        int framenum = 1;
+        while (vis->Run()) {
+            vis->BeginScene();
+
+            // Advance the sim
+            vis->Render();
+            sys.DoStepDynamics(5e-4);
+
+            // Set the scooter speed
+            //body_1->SetPos_dt(Vector(-v_m_s, 0, 0));
+            body_8->SetWvel_loc(Vector(0, 0, wheel_Wvel));
+            body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
+
+            // Move the camera
+            vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+
+            // Export forces on steering column link2
+            //double fx = bearing_lower_rigid->GetForce().x();
+            //double fy = bearing_lower_rigid->GetForce().y();
+            //double fz = bearing_lower_rigid->GetForce().z();
+            //double mx = bearing_lower_rigid->GetTorque().x();
+            //double my = bearing_lower_rigid->GetTorque().y();
+            //double mz = bearing_lower_rigid->GetTorque().z();
+            double fx = link2->Get_react_force().x();
+            double fy = link2->Get_react_force().y();
+            double fz = link2->Get_react_force().z();
+            double mx = link2->Get_react_torque().x();
+            double my = link2->Get_react_torque().y();
+            double mz = link2->Get_react_torque().z();
+            
+            file_out1 << sys.GetChTime() << "," << fx << "," << fy << "," << fz << "," << mx << "," << my << "," << mz << "\n";
+
+            // Export every nth frame
+            //if (ii % 10 == 0){
+            //    vis->WriteImageToFile("frames/" + std::to_string(framenum) + ".png");
+            //    framenum++;
+            //}
+
+            ii++;
+
+            vis->EndScene();
+        }
     }
+
+    // Beam based steering column
+    if (use_beam_column) {
+        // Create a mesh, that is a container for groups
+    // of elements and their referenced nodes.
+    // Remember to add it to the system.
+        auto mesh1 = chrono_types::make_shared<ChMesh>();
+        auto mesh2 = chrono_types::make_shared<ChMesh>();
+        auto mesh3 = chrono_types::make_shared<ChMesh>();
+        auto mesh4 = chrono_types::make_shared<ChMesh>();
+        auto mesh5 = chrono_types::make_shared<ChMesh>();
+        auto mesh6 = chrono_types::make_shared<ChMesh>();
+        auto mesh7 = chrono_types::make_shared<ChMesh>();
+        sys.Add(mesh1);
+        sys.Add(mesh2);
+        sys.Add(mesh3);
+        sys.Add(mesh4);
+        sys.Add(mesh5);
+        sys.Add(mesh6);
+        sys.Add(mesh7);
+
+        //mesh1->SetAutomaticGravity(true, 2);  // for max precision in gravity of FE, at least 2 integration points per element when using cubic IGA
+
+        // Length to end of each beam segment
+        double beam_L1 = 5e-3;
+        double beam_L2 = 39e-3;
+        double beam_L3 = 57e-3;
+        double beam_L4 = 110e-3;
+        double beam_L5 = 127e-3;
+        double beam_L6 = 142e-3;
+        double beam_L7 = 187e-3;
+
+        // Diameters of each beam segment
+        double beam_r1 = 0.032;
+        double beam_r2 = 0.026;
+        double beam_r3 = 0.025;
+        double beam_r4 = 0.024;
+        double beam_r5 = 0.025;
+        double beam_r6 = 0.025;
+        double beam_r7 = 0.025;
+
+        // Create the different beam sections, i.e. thickness and material properties
+        ChVector<> beam_start;
+        ChVector<> beamRotV;
+        ChQuaternion<> beamRot;
+
+        // start point of steering column first section and angle in abs coordinates
+        beam_start = ChVector<>(-0.50364685477, 0.36932212205, -0.000959909868418846);
+        beamRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+        beamRotV = beamRot.Rotate(VECT_Y);
+
+        // Section 1
+        auto minertia1 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia1->SetDensity(7850);
+        minertia1->SetArea(CH_C_PI * (pow(beam_r1, 2)));
+        minertia1->SetIyy((CH_C_PI / 4.0) * (pow(beam_r1, 4)));
+        minertia1->SetIzz((CH_C_PI / 4.0) * (pow(beam_r1, 4)));
+
+        auto melasticity1 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity1->SetYoungModulus(205e9);
+        melasticity1->SetGwithPoissonRatio(0.29);
+        melasticity1->SetArea(CH_C_PI * (pow(beam_r1, 2)));
+        melasticity1->SetIyy((CH_C_PI / 4.0) * (pow(beam_r1, 4)));
+        melasticity1->SetIzz((CH_C_PI / 4.0) * (pow(beam_r1, 4)));
+        melasticity1->SetJ((CH_C_PI / 2.0) * (pow(beam_r1, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection1 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia1, melasticity1);
+        msection1->SetCircular(true);
+        msection1->SetDrawCircularRadius(beam_r1);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder1;
+        builder1.BuildBeam(mesh1,       // the mesh to put the elements in
+            msection1,                  // section of the beam
+            2,                          // number of sections (spans)
+            beam_start,                 // start point
+            beam_start + beam_L1 * beamRotV,  // end point
+            beamRotV,        // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg1 = builder1.GetLastBeamNodes().front();
+        //auto node_mid1 = builder1.GetLastBeamNodes()[(int)floor(builder1.GetLastBeamNodes().size() / 2.0)];
+        auto node_end1 = builder1.GetLastBeamNodes().back();
+
+        // Section 2
+        auto minertia2 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia2->SetDensity(7850);
+        minertia2->SetArea(CH_C_PI * (pow(beam_r2, 2)));
+        minertia2->SetIyy((CH_C_PI / 4.0) * (pow(beam_r2, 4)));
+        minertia2->SetIzz((CH_C_PI / 4.0) * (pow(beam_r2, 4)));
+
+        auto melasticity2 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity2->SetYoungModulus(205e9);
+        melasticity2->SetGwithPoissonRatio(0.29);
+        melasticity2->SetArea(CH_C_PI * (pow(beam_r2, 2)));
+        melasticity2->SetIyy((CH_C_PI / 4.0) * (pow(beam_r2, 4)));
+        melasticity2->SetIzz((CH_C_PI / 4.0) * (pow(beam_r2, 4)));
+        melasticity2->SetJ((CH_C_PI / 2.0) * (pow(beam_r2, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection2 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia2, melasticity2);
+        msection2->SetCircular(true);
+        msection2->SetDrawCircularRadius(beam_r2);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder2;
+        builder2.BuildBeam(mesh2,       // the mesh to put the elements in
+            msection2,                  // section of the beam
+            7,                          // number of sections (spans)
+            beam_start + beam_L1 * beamRotV,  // start point
+            beam_start + beam_L2 * beamRotV,  // end point
+            beamRotV,                     // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg2 = builder2.GetLastBeamNodes().front();
+        auto node_mid2 = builder2.GetLastBeamNodes()[(int)floor(builder2.GetLastBeamNodes().size() / 2.0)];
+        auto node_end2 = builder2.GetLastBeamNodes().back();
+
+        // Attach first node of this beam to last node of last beam
+        auto joint12 = chrono_types::make_shared<ChLinkMateFix>();
+        joint12->Initialize(node_end1, node_beg2);
+        sys.Add(joint12);
+
+        // Section 3
+        auto minertia3 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia3->SetDensity(7850);
+        minertia3->SetArea(CH_C_PI * (pow(beam_r3, 2)));
+        minertia3->SetIyy((CH_C_PI / 4.0) * (pow(beam_r3, 4)));
+        minertia3->SetIzz((CH_C_PI / 4.0) * (pow(beam_r3, 4)));
+
+        auto melasticity3 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity3->SetYoungModulus(205e9);
+        melasticity3->SetGwithPoissonRatio(0.29);
+        melasticity3->SetArea(CH_C_PI * (pow(beam_r3, 2)));
+        melasticity3->SetIyy((CH_C_PI / 4.0) * (pow(beam_r3, 4)));
+        melasticity3->SetIzz((CH_C_PI / 4.0) * (pow(beam_r3, 4)));
+        melasticity3->SetJ((CH_C_PI / 2.0) * (pow(beam_r3, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection3 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia3, melasticity3);
+        msection3->SetCircular(true);
+        msection3->SetDrawCircularRadius(beam_r3);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder3;
+        builder3.BuildBeam(mesh3,     // the mesh to put the elements in
+            msection3,                  // section of the beam
+            4,                          // number of sections (spans)
+            beam_start + beam_L2 * beamRotV,  // start point
+            beam_start + beam_L3 * beamRotV,  // end point
+            beamRotV,                     // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg3 = builder3.GetLastBeamNodes().front();
+        //auto node_mid3 = builder3.GetLastBeamNodes()[(int)floor(builder3.GetLastBeamNodes().size() / 2.0)];
+        auto node_mid3 = builder3.GetLastBeamNodes()[4];
+        auto node_end3 = builder3.GetLastBeamNodes().back();
+
+        std::cout << "section 3 has " << builder3.GetLastBeamNodes().size() << "nodes" << "\n";
+
+        // Attach first node of this beam to last node of last beam
+        auto joint23 = chrono_types::make_shared<ChLinkMateFix>();
+        joint23->Initialize(node_end2, node_beg3);
+        sys.Add(joint23);
+
+        // Section 4
+        auto minertia4 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia4->SetDensity(7850);
+        minertia4->SetArea(CH_C_PI * (pow(beam_r4, 2)));
+        minertia4->SetIyy((CH_C_PI / 4.0) * (pow(beam_r4, 4)));
+        minertia4->SetIzz((CH_C_PI / 4.0) * (pow(beam_r4, 4)));
+
+        auto melasticity4 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity4->SetYoungModulus(205e9);
+        melasticity4->SetGwithPoissonRatio(0.29);
+        melasticity4->SetArea(CH_C_PI * (pow(beam_r4, 2)));
+        melasticity4->SetIyy((CH_C_PI / 4.0) * (pow(beam_r4, 4)));
+        melasticity4->SetIzz((CH_C_PI / 4.0) * (pow(beam_r4, 4)));
+        melasticity4->SetJ((CH_C_PI / 2.0) * (pow(beam_r4, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection4 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia4, melasticity4);
+        msection4->SetCircular(true);
+        msection4->SetDrawCircularRadius(beam_r4);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder4;
+        builder4.BuildBeam(mesh4,     // the mesh to put the elements in
+            msection4,                  // section of the beam
+            12,                         // number of sections (spans)
+            beam_start + beam_L3 * beamRotV,  // start point
+            beam_start + beam_L4 * beamRotV,  // end point
+            beamRotV,                     // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg4 = builder4.GetLastBeamNodes().front();
+        //auto node_mid4 = builder4.GetLastBeamNodes()[(int)floor(builder4.GetLastBeamNodes().size() / 2.0)];
+        auto node_end4 = builder4.GetLastBeamNodes().back();
+
+        // Attach first node of this beam to last node of last beam
+        auto joint34 = chrono_types::make_shared<ChLinkMateFix>();
+        joint34->Initialize(node_end3, node_beg4);
+        sys.Add(joint34);
+
+        // Section 5
+        auto minertia5 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia5->SetDensity(7850);
+        minertia5->SetArea(CH_C_PI * (pow(beam_r5, 2)));
+        minertia5->SetIyy((CH_C_PI / 4.0) * (pow(beam_r5, 4)));
+        minertia5->SetIzz((CH_C_PI / 4.0) * (pow(beam_r5, 4)));
+
+        auto melasticity5 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity5->SetYoungModulus(205e9);
+        melasticity5->SetGwithPoissonRatio(0.29);
+        melasticity5->SetArea(CH_C_PI * (pow(beam_r5, 2)));
+        melasticity5->SetIyy((CH_C_PI / 4.0) * (pow(beam_r5, 4)));
+        melasticity5->SetIzz((CH_C_PI / 4.0) * (pow(beam_r5, 4)));
+        melasticity5->SetJ((CH_C_PI / 2.0) * (pow(beam_r5, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection5 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia5, melasticity5);
+        msection5->SetCircular(true);
+        msection5->SetDrawCircularRadius(beam_r5);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder5;
+        builder5.BuildBeam(mesh5,     // the mesh to put the elements in
+            msection5,                  // section of the beam
+            4,                         // number of sections (spans)
+            beam_start + beam_L4 * beamRotV,  // start point
+            beam_start + beam_L5 * beamRotV,  // end point
+            beamRotV,                     // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg5 = builder5.GetLastBeamNodes().front();
+        //auto node_mid5 = builder5.GetLastBeamNodes()[(int)floor(builder5.GetLastBeamNodes().size() / 2.0)];
+        auto node_end5 = builder5.GetLastBeamNodes().back();
+
+        // Attach first node of this beam to last node of last beam
+        auto joint45 = chrono_types::make_shared<ChLinkMateFix>();
+        joint45->Initialize(node_end4, node_beg5);
+        sys.Add(joint45);
+
+        // Section 6
+        auto minertia6 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia6->SetDensity(7850);
+        minertia6->SetArea(CH_C_PI * (pow(beam_r6, 2)));
+        minertia6->SetIyy((CH_C_PI / 4.0) * (pow(beam_r6, 4)));
+        minertia6->SetIzz((CH_C_PI / 4.0) * (pow(beam_r6, 4)));
+
+        auto melasticity6 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity6->SetYoungModulus(205e9);
+        melasticity6->SetGwithPoissonRatio(0.29);
+        melasticity6->SetArea(CH_C_PI * (pow(beam_r6, 2)));
+        melasticity6->SetIyy((CH_C_PI / 4.0) * (pow(beam_r6, 4)));
+        melasticity6->SetIzz((CH_C_PI / 4.0) * (pow(beam_r6, 4)));
+        melasticity6->SetJ((CH_C_PI / 2.0) * (pow(beam_r6, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection6 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia6, melasticity6);
+        msection6->SetCircular(true);
+        msection6->SetDrawCircularRadius(beam_r6);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder6;
+        builder6.BuildBeam(mesh6,     // the mesh to put the elements in
+            msection6,                  // section of the beam
+            4,                         // number of sections (spans)
+            beam_start + beam_L5 * beamRotV,  // start point
+            beam_start + beam_L6 * beamRotV,  // end point
+            beamRotV,                     // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg6 = builder6.GetLastBeamNodes().front();
+        //auto node_mid6 = builder6.GetLastBeamNodes()[(int)floor(builder6.GetLastBeamNodes().size() / 2.0)];
+        auto node_mid6 = builder6.GetLastBeamNodes()[0];
+        auto node_end6 = builder6.GetLastBeamNodes().back();
+
+        std::cout << "section 6 has " << builder6.GetLastBeamNodes().size() << "nodes" << "\n";
+
+        // Attach first node of this beam to last node of last beam
+        auto joint56 = chrono_types::make_shared<ChLinkMateFix>();
+        joint56->Initialize(node_end5, node_beg6);
+        sys.Add(joint56);
+
+        // Section 7
+        auto minertia7 = chrono_types::make_shared<ChInertiaCosseratSimple>();
+        minertia7->SetDensity(7850);
+        minertia7->SetArea(CH_C_PI * (pow(beam_r7, 2)));
+        minertia7->SetIyy((CH_C_PI / 4.0) * (pow(beam_r7, 4)));
+        minertia7->SetIzz((CH_C_PI / 4.0) * (pow(beam_r7, 4)));
+
+        auto melasticity7 = chrono_types::make_shared<ChElasticityCosseratSimple>();
+        melasticity7->SetYoungModulus(205e9);
+        melasticity7->SetGwithPoissonRatio(0.29);
+        melasticity7->SetArea(CH_C_PI * (pow(beam_r7, 2)));
+        melasticity7->SetIyy((CH_C_PI / 4.0) * (pow(beam_r7, 4)));
+        melasticity7->SetIzz((CH_C_PI / 4.0) * (pow(beam_r7, 4)));
+        melasticity7->SetJ((CH_C_PI / 2.0) * (pow(beam_r7, 4)));
+        // set the Timoshenko shear factors, if needed: melasticity->SetKsy(..) melasticity->SetKsy(..)
+
+        auto msection7 = chrono_types::make_shared<ChBeamSectionCosserat>(minertia7, melasticity7);
+        msection7->SetCircular(true);
+        msection7->SetDrawCircularRadius(beam_r7);
+
+        // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
+        ChBuilderBeamIGA builder7;
+        builder7.BuildBeam(mesh7,     // the mesh to put the elements in
+            msection7,                  // section of the beam
+            12,                         // number of sections (spans)
+            beam_start + beam_L6 * beamRotV,  // start point
+            beam_start + beam_L7 * beamRotV,  // end point
+            beamRotV,                     // suggested Y direction of section
+            3);                         // order (3 = cubic, etc)
+
+        // Some nodes
+        auto node_beg7 = builder7.GetLastBeamNodes().front();
+        //auto node_mid7 = builder7.GetLastBeamNodes()[(int)floor(builder7.GetLastBeamNodes().size() / 2.0)];
+        auto node_end7 = builder7.GetLastBeamNodes().back();
+
+        // Attach first node of this beam to last node of last beam
+        auto joint67 = chrono_types::make_shared<ChLinkMateFix>();
+        joint67->Initialize(node_end6, node_beg7);
+        sys.Add(joint67);
+
+        // Attach dummy bodies to mid node of beams for use in constraints
+        auto dummyS = chrono_types::make_shared<ChBody>();
+        dummyS->SetMass(1e-3);
+        dummyS->SetPos(node_mid2->GetPos());
+        sys.Add(dummyS);
+        auto dummySL = chrono_types::make_shared<ChLinkMateFix>();
+        dummySL->Initialize(node_mid2, dummyS);
+        sys.Add(dummySL);
+
+        std::cout << node_mid2->GetPos() << "\n";
+        std::cout << dummyS->GetPos() << "\n";
+
+        auto dummyL = chrono_types::make_shared<ChBody>();
+        dummyL->SetMass(1e-3);
+        dummyL->SetPos(node_mid3->GetPos());
+        sys.Add(dummyL);
+        auto dummy3L = chrono_types::make_shared<ChLinkMateFix>();
+        dummy3L->Initialize(node_mid3, dummyL);
+        sys.Add(dummy3L);
+
+        auto dummyU = chrono_types::make_shared<ChBody>();
+        dummyU->SetMass(1e-3);
+        dummyU->SetPos(node_mid6->GetPos());
+        sys.Add(dummyU);
+        auto dummyUL = chrono_types::make_shared<ChLinkMateFix>();
+        dummyUL->Initialize(node_mid3, dummyU);
+        sys.Add(dummyUL);
+
+        // Lower bearing
+        linkLoc = ChVector<>(-0.56914720800737, 0.106614554165759, -0.000959909868418846);
+        linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+        auto bearing_lower_beam = chrono_types::make_shared<ChLoadBodyBodyBushingGeneric>(
+            dummyL, body_1, ChFrame<>(linkLoc, linkRot), bearing_K, bearing_R);
+        bearing_lower_beam->SetNeutralForce(ChVector<>(0, 0, 0));
+        bearing_lower_beam->NeutralDisplacement().SetPos(ChVector<>(0, 0, 0));
+        load_container->Add(bearing_lower_beam);
+
+        // Upper bearing
+        linkLoc = ChVector<>(-0.55342228479, 0.16968377637, -0.000959909868418846);
+        linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+        auto bearing_upper_beam = chrono_types::make_shared<ChLoadBodyBodyBushingGeneric>(
+            dummyU, body_1, ChFrame<>(linkLoc, linkRot), bearing_K, bearing_R);
+        bearing_upper_beam->SetNeutralForce(ChVector<>(0, 0, 0));
+        bearing_upper_beam->NeutralDisplacement().SetPos(ChVector<>(0, 0, 0));
+        load_container->Add(bearing_upper_beam);
+
+        // Mate constraint : Concentric1[MateConcentric] type : 1 align : 0 flip : False
+        //   Entity 0: C::E name : body_3, SW name : shaft - 2, SW ref.type : 2 (2)
+        //   Entity 1: C::E name : body_2, SW name : steerer - 3, SW ref.type : 2 (2)
+        linkLoc = ChVector<>(-0.496994002644769, 0.396005254527576, -0.000959909868418846);
+        linkRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+        link2->Initialize(body_2, dummyS, ChFrame<>(linkLoc, linkRot));
+        sys.Add(link2);
+
+        std::cout << "Section 1 has " << builder1.GetLastBeamElements().size() <<" elements" << "\n";   // 2
+        std::cout << "Section 2 has " << builder2.GetLastBeamElements().size() << " elements" << "\n";  // 7
+        std::cout << "Section 3 has " << builder3.GetLastBeamElements().size() << " elements" << "\n";  // 4
+        std::cout << "Section 4 has " << builder4.GetLastBeamElements().size() << " elements" << "\n";  // 12
+        std::cout << "Section 5 has " << builder5.GetLastBeamElements().size() << " elements" << "\n";  // 4
+        std::cout << "Section 6 has " << builder6.GetLastBeamElements().size() << " elements" << "\n";  // 4
+        std::cout << "Section 7 has " << builder7.GetLastBeamElements().size() << " elements" << "\n";  // 12
+
+        // Attach a visualization of the FEM mesh.
+        auto mvisualizebeamA = chrono_types::make_shared<ChVisualShapeFEA>(mesh1);
+        mvisualizebeamA->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA->SetSmoothFaces(true);
+        mvisualizebeamA->SetBeamResolutionSection(100);
+        mvisualizebeamA->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA->SetSymbolsThickness(0.001);
+        mvisualizebeamA->SetSymbolsScale(0.01);
+        mvisualizebeamA->SetZbufferHide(false);
+        mesh1->AddVisualShapeFEA(mvisualizebeamA);
+
+        auto mvisualizebeamA2 = chrono_types::make_shared<ChVisualShapeFEA>(mesh2);
+        mvisualizebeamA2->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA2->SetSmoothFaces(true);
+        mvisualizebeamA2 = chrono_types::make_shared<ChVisualShapeFEA>(mesh2);
+        mvisualizebeamA2->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA2->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA2->SetSymbolsThickness(0.001);
+        mvisualizebeamA2->SetSymbolsScale(0.01);
+        mvisualizebeamA2->SetZbufferHide(false);
+        mesh2->AddVisualShapeFEA(mvisualizebeamA2);
+
+        auto mvisualizebeamA3 = chrono_types::make_shared<ChVisualShapeFEA>(mesh3);
+        mvisualizebeamA3->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA3->SetSmoothFaces(true);
+        mvisualizebeamA3 = chrono_types::make_shared<ChVisualShapeFEA>(mesh3);
+        mvisualizebeamA3->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA3->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA3->SetSymbolsThickness(0.001);
+        mvisualizebeamA3->SetSymbolsScale(0.01);
+        mvisualizebeamA3->SetZbufferHide(false);
+        mesh3->AddVisualShapeFEA(mvisualizebeamA3);
+
+        auto mvisualizebeamA4 = chrono_types::make_shared<ChVisualShapeFEA>(mesh4);
+        mvisualizebeamA4->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA4->SetSmoothFaces(true);
+        mvisualizebeamA4 = chrono_types::make_shared<ChVisualShapeFEA>(mesh4);
+        mvisualizebeamA4->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA4->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA4->SetSymbolsThickness(0.001);
+        mvisualizebeamA4->SetSymbolsScale(0.01);
+        mvisualizebeamA4->SetZbufferHide(false);
+        mesh4->AddVisualShapeFEA(mvisualizebeamA4);
+
+        auto mvisualizebeamA5 = chrono_types::make_shared<ChVisualShapeFEA>(mesh5);
+        mvisualizebeamA5->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA5->SetSmoothFaces(true);
+        mvisualizebeamA5 = chrono_types::make_shared<ChVisualShapeFEA>(mesh5);
+        mvisualizebeamA5->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA5->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA5->SetSymbolsThickness(0.001);
+        mvisualizebeamA5->SetSymbolsScale(0.01);
+        mvisualizebeamA5->SetZbufferHide(false);
+        mesh5->AddVisualShapeFEA(mvisualizebeamA5);
+
+        auto mvisualizebeamA6 = chrono_types::make_shared<ChVisualShapeFEA>(mesh6);
+        mvisualizebeamA6->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA6->SetSmoothFaces(true);
+        mvisualizebeamA6 = chrono_types::make_shared<ChVisualShapeFEA>(mesh6);
+        mvisualizebeamA6->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA6->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA6->SetSymbolsThickness(0.001);
+        mvisualizebeamA6->SetSymbolsScale(0.01);
+        mvisualizebeamA6->SetZbufferHide(false);
+        mesh6->AddVisualShapeFEA(mvisualizebeamA6);
+
+        auto mvisualizebeamA7 = chrono_types::make_shared<ChVisualShapeFEA>(mesh7);
+        mvisualizebeamA7->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+        mvisualizebeamA7->SetSmoothFaces(true);
+        mvisualizebeamA7 = chrono_types::make_shared<ChVisualShapeFEA>(mesh7);
+        mvisualizebeamA7->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+        //mvisualizebeamA7->SetFEMdataType(ChVisualShapeFEA::GlyphType::ELEM_TENS_STRESS);
+        mvisualizebeamA7->SetSymbolsThickness(0.001);
+        mvisualizebeamA7->SetSymbolsScale(0.01);
+        mvisualizebeamA7->SetZbufferHide(false);
+        mesh7->AddVisualShapeFEA(mvisualizebeamA7);
+
+        // Set initial velocities of beam elements
+        auto nodes1 = builder1.GetLastBeamNodes();
+        for (auto in : nodes1) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+        auto nodes2 = builder2.GetLastBeamNodes();
+        for (auto in : nodes2) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+        auto nodes3 = builder3.GetLastBeamNodes();
+        for (auto in : nodes3) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+        auto nodes4 = builder4.GetLastBeamNodes();
+        for (auto in : nodes4) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+        auto nodes5 = builder5.GetLastBeamNodes();
+        for (auto in : nodes5) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+        auto nodes6 = builder6.GetLastBeamNodes();
+        for (auto in : nodes6) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+        auto nodes7 = builder7.GetLastBeamNodes();
+        for (auto in : nodes7) {
+            in->SetPos_dt(Vector(-v_m_s, 0, 0));
+        }
+
+        // Add things to Irrlicht 3D viewer
+        vis->AttachSystem(&sys);
+        vis->EnableBodyFrameDrawing(true);
+        vis->EnableCollisionShapeDrawing(true);
+        vis->EnableContactDrawing(ContactsDrawMode::CONTACT_NORMALS);
+        //vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+        vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
+        vis->SetSymbolScale(0.15);
+        vis->ShowInfoPanel(true);
+
+        // Do a linear static analysis.
+        //sys.DoStaticLinear();    
+
+        // Write output file and header
+        std::string filename = "columnForces.csv";
+        chrono::ChStreamOutAsciiFile file_out1(filename.c_str());
+        file_out1 << "time" << "," << "fx" << "," << "fy" << "," << "fz" << "," << "mx" << "," << "my" << "," << "mz" << 
+                        "," << "stressN1"<< ","  << "stressM1" << "," << "stressN2" << "," << "stressM2"<< "," << "stressN3" <<
+                        "," << "stressM3" << "," << "stressN4" << "," << "stressM4" << "," << "stressN5" << "," << "stressM5" <<
+                        "," << "stressN6" << "," << "stressM6" << "," << "stressN7" << "," << "stressM7" << "\n";
+
+        int ii = 1;
+        int framenum = 1;
+        while (vis->Run()) {
+            vis->BeginScene();
+
+            // Advance the sim
+            vis->Render();
+            sys.DoStepDynamics(5e-4);
+
+            // Set the scooter speed
+            //body_1->SetPos_dt(Vector(-v_m_s, 0, 0));
+            body_8->SetWvel_loc(Vector(0, 0, wheel_Wvel));
+            body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
+
+            // Move the camera
+            vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+
+            // Export forces on steering column link2
+            double fx = link2->Get_react_force().x();
+            double fy = link2->Get_react_force().y();
+            double fz = link2->Get_react_force().z();
+            double mx = link2->Get_react_torque().x();
+            double my = link2->Get_react_torque().y();
+            double mz = link2->Get_react_torque().z();
+            double stressN1 = builder1.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM1 = builder1.GetLastBeamElements()[0]->GetStressM()[0].x();
+            double stressN2 = builder2.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM2 = builder2.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressN3 = builder3.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM3 = builder3.GetLastBeamElements()[0]->GetStressM()[0].x();
+            double stressN4 = builder4.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM4 = builder4.GetLastBeamElements()[0]->GetStressM()[0].x();
+            double stressN5 = builder5.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM5 = builder5.GetLastBeamElements()[0]->GetStressM()[0].x();
+            double stressN6 = builder6.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM6 = builder6.GetLastBeamElements()[0]->GetStressM()[0].x();
+            double stressN7 = builder7.GetLastBeamElements()[0]->GetStressN()[0].x();
+            double stressM7 = builder7.GetLastBeamElements()[0]->GetStressM()[0].x();
+
+            file_out1 << sys.GetChTime() << "," << fx << "," << fy << "," << fz << "," << mx << "," << my << "," << mz << 
+                "," << stressN1 << "," << stressM1 << "," << stressN2 << "," << stressM2 << "," << stressN3 << "," << stressM3 << 
+                "," << stressN4 << "," << stressM4 << "," << stressN5 << "," << stressM5 << "," << stressN6 << "," << stressM6 << 
+                "," << stressN7 << "," << stressM7 << "\n";
+
+            // Export every nth frame
+            //if (ii % 10 == 0){
+            //    vis->WriteImageToFile("frames/" + std::to_string(framenum) + ".png");
+            //    framenum++;
+            //}
+
+            ii++;
+
+            vis->EndScene();
+        }
+    }
+
+    
 }
 
 //
@@ -476,7 +1186,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     //mesh1->SetAutomaticGravity(true, 2);  // for max precision in gravity of FE, at least 2 integration points per element when using cubic IGA
     sys.Set_G_acc(ChVector<>(0, -9.81, 0));
 
-    // Length of each beam segment
+    // Length to end of each beam segment
     double beam_L1 = 5e-3;
     double beam_L2 = 39e-3;
     double beam_L3 = 57e-3;
@@ -497,7 +1207,16 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     //
     // Create the different beam sections, i.e. thickness and material properties
     //
+    ChVector<> beam_start;
+    ChVector<> beamRotV;
+    ChQuaternion<> beamRot;
 
+    // start point of steering column first section and angle in abs coordinates
+    beam_start = ChVector<>(-0.50981586046, 0.34457958103, -0.000959909868418846);
+    beamRot = Q_from_AngAxis(-14.0 * CH_C_DEG_TO_RAD, VECT_Z);
+    beamRotV = beamRot.Rotate(VECT_Y);
+
+    
     //
     // Section 1
     //
@@ -522,12 +1241,12 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
 
     // Use the ChBuilderBeamIGA tool for creating a straight rod divided in Nel elements:
     ChBuilderBeamIGA builder1;
-    builder1.BuildBeam(mesh1,      // the mesh to put the elements in
-        msection1,                   // section of the beam
+    builder1.BuildBeam(mesh1,       // the mesh to put the elements in
+        msection1,                  // section of the beam
         2,                          // number of sections (spans)
-        ChVector<>(0, 0, 0),        // start point
-        ChVector<>(beam_L1, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start,                 // start point
+        beam_start + beam_L1*beamRotV,  // end point
+        beamRotV,        // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -562,9 +1281,9 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     builder2.BuildBeam(mesh2,       // the mesh to put the elements in
         msection2,                  // section of the beam
         7,                          // number of sections (spans)
-        ChVector<>(beam_L1, 0, 0),  // start point
-        ChVector<>(beam_L2, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start + beam_L1 * beamRotV,  // start point
+        beam_start + beam_L2 * beamRotV,  // end point
+        beamRotV,                     // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -604,9 +1323,9 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     builder3.BuildBeam(mesh3,     // the mesh to put the elements in
         msection3,                  // section of the beam
         4,                          // number of sections (spans)
-        ChVector<>(beam_L2, 0, 0),  // start point
-        ChVector<>(beam_L3, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start + beam_L2 * beamRotV,  // start point
+        beam_start + beam_L3 * beamRotV,  // end point
+        beamRotV,                     // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -646,9 +1365,9 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     builder4.BuildBeam(mesh4,     // the mesh to put the elements in
         msection4,                  // section of the beam
         12,                         // number of sections (spans)
-        ChVector<>(beam_L3, 0, 0),  // start point
-        ChVector<>(beam_L4, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start + beam_L3 * beamRotV,  // start point
+        beam_start + beam_L4 * beamRotV,  // end point
+        beamRotV,                     // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -688,9 +1407,9 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     builder5.BuildBeam(mesh5,     // the mesh to put the elements in
         msection5,                  // section of the beam
         4,                         // number of sections (spans)
-        ChVector<>(beam_L4, 0, 0),  // start point
-        ChVector<>(beam_L5, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start + beam_L4 * beamRotV,  // start point
+        beam_start + beam_L5 * beamRotV,  // end point
+        beamRotV,                     // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -730,9 +1449,9 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     builder6.BuildBeam(mesh6,     // the mesh to put the elements in
         msection6,                  // section of the beam
         4,                         // number of sections (spans)
-        ChVector<>(beam_L5, 0, 0),  // start point
-        ChVector<>(beam_L6, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start + beam_L5 * beamRotV,  // start point
+        beam_start + beam_L6 * beamRotV,  // end point
+        beamRotV,                     // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -772,9 +1491,9 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     builder7.BuildBeam(mesh7,     // the mesh to put the elements in
         msection7,                  // section of the beam
         12,                         // number of sections (spans)
-        ChVector<>(beam_L6, 0, 0),  // start point
-        ChVector<>(beam_L7, 0, 0),  // end point
-        VECT_Y,                     // suggested Y direction of section
+        beam_start + beam_L6 * beamRotV,  // start point
+        beam_start + beam_L7 * beamRotV,  // end point
+        beamRotV,                     // suggested Y direction of section
         3);                         // order (3 = cubic, etc)
 
     // Some nodes
@@ -833,7 +1552,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     auto bushing_generic = chrono_types::make_shared<ChLoadBodyBodyBushingGeneric>(
         headset,                                        // body A
         dummyL,                                         // body B
-        ChFrame<>(ChVector<>(48.25e-3, 0.0, 0.0)),      // initial frame of bushing in abs space
+        ChFrame<>(node_mid3->GetPos()),      // initial frame of bushing in abs space
         bearing_K,                                      // the 6x6 (translation+rotation) K matrix in local frame
         bearing_R                                       // the 6x6 (translation+rotation) R matrix in local frame
         );
@@ -841,9 +1560,18 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     bushing_generic->NeutralDisplacement().SetPos(ChVector<>(0, 0, 0));
     load_container->Add(bushing_generic);
 
+    // Some force
+    //double air_force = 0.5*1.293*0.5*1.*v_m_s*v_m_s; // 0.5*rho*A*cD*v^2
+    //auto air_resistance = chrono_types::make_shared<ChForce>();
+    //air_resistance->SetMode(ChForce::ForceType::FORCE);
+    //air_resistance->SetDir(Vector(1.0, 0.0, 0.0));
+    //air_resistance->SetMforce(air_force);
+    //node_mid3->AddForce(air_resistance);
+    node_mid6->SetForce(Vector(0, -1000, 0));
+
     // Attach a visualization of the FEM mesh.
     auto mvisualizebeamA = chrono_types::make_shared<ChVisualShapeFEA>(mesh1);
-    mvisualizebeamA->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA->SetSmoothFaces(true);
     mvisualizebeamA->SetBeamResolutionSection(100);
     mvisualizebeamA->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -854,7 +1582,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     mesh1->AddVisualShapeFEA(mvisualizebeamA);
 
     auto mvisualizebeamA2 = chrono_types::make_shared<ChVisualShapeFEA>(mesh2);
-    mvisualizebeamA2->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA2->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA2->SetSmoothFaces(true);
     mvisualizebeamA2 = chrono_types::make_shared<ChVisualShapeFEA>(mesh2);
     mvisualizebeamA2->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -865,7 +1593,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     mesh2->AddVisualShapeFEA(mvisualizebeamA2);
 
     auto mvisualizebeamA3 = chrono_types::make_shared<ChVisualShapeFEA>(mesh3);
-    mvisualizebeamA3->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA3->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA3->SetSmoothFaces(true);
     mvisualizebeamA3 = chrono_types::make_shared<ChVisualShapeFEA>(mesh3);
     mvisualizebeamA3->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -876,7 +1604,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     mesh3->AddVisualShapeFEA(mvisualizebeamA3);
 
     auto mvisualizebeamA4 = chrono_types::make_shared<ChVisualShapeFEA>(mesh4);
-    mvisualizebeamA4->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA4->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA4->SetSmoothFaces(true);
     mvisualizebeamA4 = chrono_types::make_shared<ChVisualShapeFEA>(mesh4);
     mvisualizebeamA4->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -887,7 +1615,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     mesh4->AddVisualShapeFEA(mvisualizebeamA4);
 
     auto mvisualizebeamA5 = chrono_types::make_shared<ChVisualShapeFEA>(mesh5);
-    mvisualizebeamA5->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA5->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA5->SetSmoothFaces(true);
     mvisualizebeamA5 = chrono_types::make_shared<ChVisualShapeFEA>(mesh5);
     mvisualizebeamA5->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -898,7 +1626,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     mesh5->AddVisualShapeFEA(mvisualizebeamA5);
 
     auto mvisualizebeamA6 = chrono_types::make_shared<ChVisualShapeFEA>(mesh6);
-    mvisualizebeamA6->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA6->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA6->SetSmoothFaces(true);
     mvisualizebeamA6 = chrono_types::make_shared<ChVisualShapeFEA>(mesh6);
     mvisualizebeamA6->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -909,7 +1637,7 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     mesh6->AddVisualShapeFEA(mvisualizebeamA6);
 
     auto mvisualizebeamA7 = chrono_types::make_shared<ChVisualShapeFEA>(mesh7);
-    mvisualizebeamA7->SetFEMdataType(ChVisualShapeFEA::DataType::SURFACE);
+    mvisualizebeamA7->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_MZ);
     mvisualizebeamA7->SetSmoothFaces(true);
     mvisualizebeamA7 = chrono_types::make_shared<ChVisualShapeFEA>(mesh7);
     mvisualizebeamA7->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
@@ -922,91 +1650,28 @@ void Stem_Beam(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
     // This is needed if you want to see things in Irrlicht 3D view.
     vis->AttachSystem(&sys);
 
-    //myapp.AddTypicalCamera(core::vector3df(-0.1f, 0.2f, -0.2f));
+    vis->EnableBodyFrameDrawing(true);
+    vis->EnableCollisionShapeDrawing(true);
+    //vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
+    vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+    vis->AddCamera(node_mid3->GetPos() + ChVector<>(0.5, 0.2, 0.5), node_mid3->GetPos());
+    vis->SetSymbolScale(0.15);
+    vis->ShowInfoPanel(true);
 
     std::string filename = out_dir + "/rotor_displ.dat";
     chrono::ChStreamOutAsciiFile file_out1(filename.c_str());
 
-    // Set to a more precise HHT timestepper if needed
-    //sys.SetTimestepperType(ChTimestepper::Type::HHT);
-    if (auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(sys.GetTimestepper())) {
-        mystepper->SetStepControl(false);
-        mystepper->SetModifiedNewton(false);
-    }
-
-    //myapp.SetTimestep(0.001);
-    sys.DoStaticLinear();
-    //sys.DoFullAssembly();
-    //sys.DoStepDynamics(1e-3);
+    //sys.DoStaticLinear();
 
     while (vis->Run()) {
         vis->BeginScene();
         vis->Render();
-        sys.DoStepDynamics(1e-3);
+        sys.DoStepDynamics(5e-4);
         vis->EndScene();
     }
 }
 
 /// Following class will be used to manage events from the user interface
-
-void Constraint_Test(ChSystem& sys, std::shared_ptr<ChVisualSystemIrrlicht> vis) {
-
-    // Gravity
-    sys.Set_G_acc(ChVector<>(0, -9.81, 0));
-
-    // Create body 1
-    auto mat = chrono_types::make_shared<ChMaterialSurfaceSMC>();
-    mat->SetFriction(1.0f);
-    auto b1 = chrono_types::make_shared<ChBodyEasyBox>(.5, .5, .5, 1000, true, true, mat);
-    sys.Add(b1);
-    b1->SetPos(ChVector<>(0, 0, 0));
-    b1->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/asphalt.jpg"));
-
-    // Create body 2
-    auto b2 = chrono_types::make_shared<ChBodyEasyBox>(.5, .5, .5, 1000, true, true, mat);
-    sys.Add(b2);
-    b2->SetPos(ChVector<>(0., .75, 0));
-    b2->SetBodyFixed(true);
-    b2->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/asphalt.jpg"));
-
-    // Constrain the two bodies
-    ChVector<> cA;
-    ChVector<> dA;
-    ChVector<> cB;
-    ChVector<> dB;
-
-    auto fixed = chrono_types::make_shared<ChLinkMateGeneric>();
-    fixed->SetConstrainedCoords(true, true, true, true, true, true);
-    cA = (0., 0.5, 0.);
-    cB = (0., 0.5, 0.);
-    dA = (0., 0., 0.);
-    dB = (0., 0., 0.);
-    fixed->Initialize(b1, b2, false, cA, cB, dA, dB);
-    sys.Add(fixed);
-
-
-    //
-    // This is needed if you want to see things in Irrlicht 3D view.
-    //
-    vis->AttachSystem(&sys);
-    vis->SetWindowSize(1600, 1200);
-    vis->SetWindowTitle("Forklift demo");
-    vis->Initialize();
-    vis->AddLogo();
-    vis->AddSkyBox();
-    vis->AddTypicalLights();
-    vis->AddCamera(ChVector<>(-6, 3, -6));
-
-    // Do a linear static analysis.
-    sys.DoStaticLinear();    
-
-    while (vis->Run()) {
-        vis->BeginScene();
-        vis->Render();
-        sys.DoStepDynamics(1e-4);
-        vis->EndScene();
-    }
-}
 //class MyEventReceiver : public IEventReceiver {
 //public:
 //    MyEventReceiver(ChIrrApp* myapp) {
@@ -1064,7 +1729,7 @@ int main(int argc, char* argv[]) {
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
-    ChClampValue(which, 1, 4);
+    ChClampValue(which, 1, 3);
 
     // Create the Irrlicht visualization system
     auto vis = chrono_types::make_shared<ChVisualSystemIrrlicht>();
@@ -1092,16 +1757,21 @@ int main(int argc, char* argv[]) {
     solver->SetVerbose(false);
     sys.SetSolverForceTolerance(1e-18);
 
-    //sys.SetSolverType(ChSolver::Type::BARZILAIBORWEIN);
     sys.SetSolverMaxIterations(1000);
     sys.SetMaxiter(1000);
-    sys.SetMaxPenetrationRecoverySpeed(0.1);
+    sys.SetMaxPenetrationRecoverySpeed(1.0);
     sys.SetStiffContact(false);
     
     // Change type of integrator:
-    sys.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT);  // fast, less precise
-    //sys.SetTimestepperType(chrono::ChTimestepper::Type::HHT);  // precise,slower, might iterate each step
+    //sys.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT);  // fast, less precise
 
+    // Set to a more precise HHT timestepper if needed
+    sys.SetTimestepperType(ChTimestepper::Type::HHT);
+    if (auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(sys.GetTimestepper())) {
+        mystepper->SetStepControl(false);
+        mystepper->SetModifiedNewton(false);
+        mystepper->SetAlpha(-0.3);
+    }
 
 #ifdef USE_MKL
     auto mkl_solver = chrono_types::make_shared<ChSolverPardisoMKL>();
@@ -1113,15 +1783,12 @@ int main(int argc, char* argv[]) {
     // Run the sub-demos:
 
     while (true) {
-        switch (ID_current_example) {
+        switch (which) {
         case 1:
             Nami_MBD(sys,vis);
             break;
         case 2:
             Stem_Beam(sys,vis);
-            break;
-        case 3:
-            Constraint_Test(sys,vis);
             break;
         default:
             break;
