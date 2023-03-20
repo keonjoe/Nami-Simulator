@@ -9,10 +9,12 @@ To compile, you will need to follow the installation instructions for Project Ch
 ## Using the precompiled binaries:
 To test the tool out using the precompiled binaries, please follow these steps:
 1. Create a folder structure like the following:
-  -Root
-    -data
-    -vx.x
-      -nami_shapes
+```
+.Root
+├── data                     # Contains common visual elements for display window
+└──  vx.x                    # Contains executable files of the simulator
+     └──  nami_shapes        # Contains .obj files for visual geometry
+```
 2. Clone this repository and place the contents of 'data/' into 'Root/data/'. Contents of 'nami_shapes' will need to placed in 'Root/vx.x/nami_shapes'.
 3. Download the [Intel MKL Library](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html) and follow the unofficial method of setting the environment variable section under "Set up the environment" of this guide: https://api.projectchrono.org/development/module_mkl_installation.html
 4. Download the precompiled binaries under [Releases](https://github.com/keonjoe/Nami-Simulator/releases). Place these in vx.x, with x.x matching the release version you download.
