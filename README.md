@@ -3,11 +3,22 @@ A MBD and Beam based simulator based on the Project Chrono physics engine. The g
 ![image](https://user-images.githubusercontent.com/22308960/221742415-0f9a55ee-e3bf-40af-bb90-71821a18af2e.png)
 ![image](https://user-images.githubusercontent.com/22308960/221742497-f40b7ab3-83c5-49ed-9d01-54a9d43c6913.png)
 
+## How to compile:
 To compile, you will need to follow the installation instructions for Project Chrono: https://api.projectchrono.org/tutorial_install_chrono.html. Once complete, you will need to configure this project in CMake and copy+paste the data/ directory from the Project Chrono install into the build folder for this project.
 
-Once the project is more mature, I will add precompiled versions along with more user friendly UI features.
+## Using the precompiled binaries:
+To test the tool out using the precompiled binaries, please follow these steps:
+1. Create a folder structure like the following:
+  -Root
+    -data
+    -vx.x
+      -nami_shapes
+2. Clone this repository and place the contents of 'data/' into 'Root/data/'. Contents of 'nami_shapes' will need to placed in 'Root/vx.x/nami_shapes'.
+3. Download the [Intel MKL Library](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl.html) and follow the unofficial method of setting the environment variable section under "Set up the environment" of this guide: https://api.projectchrono.org/development/module_mkl_installation.html
+4. Download the precompiled binaries under [Releases](https://github.com/keonjoe/Nami-Simulator/releases). Place these in vx.x, with x.x matching the release version you download.
+5. Run the model by launching from command line with the appropriate command line arguments, or by using the nami_stem.bat batch script. The nami_stem.bat script included with each release contains comments relating to what the various command line arguments do.
 
-Some more context on the issue:
+## Some more context on the issue:
 It is suspected that the AL 7075 steering shaft present in all Nami Burn E scooters manufactured before Jan. 2023 are seeing stress from normal use which eventually exceed the typical fatigue limit for aluminum 7075. Several scooters have failed suddenly and catastrophically due to this suspected design oversight.
 
 Anecdotal cases can be found in the following Facebook post: https://www.facebook.com/groups/namiworldwide/posts/1246539072876878/
