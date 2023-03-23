@@ -55,6 +55,7 @@ double von_mises(std::vector<ChBuilderBeamIGA> beam, std::vector<double> izzs, s
 
     // init some work variables
     double vonMisesMax = 0.0;
+    double tempStress = 0.0;
     ChVector<> force_1; ChVector<> force0; ChVector<> force75;
     ChVector<> torque_1; ChVector<> torque0; ChVector<> torque75;
     double vm_1; double vm0; double vm75;
@@ -86,7 +87,7 @@ double von_mises(std::vector<ChBuilderBeamIGA> beam, std::vector<double> izzs, s
             double s11 = abs(sigma_c_1 + sigma_bend_1); sigmas.push_back(s11);
             double s12 = abs(sigma_c_1 - sigma_bend_1); sigmas.push_back(s12);
 
-            vonMisesMax = *std::max_element(sigmas.begin(), sigmas.end());
+            tempStress = *std::max_element(sigmas.begin(), sigmas.end());
 
             //force_1 = (0, 0, 0); force0 = (0, 0, 0); force75 = (0, 0, 0);
             //torque_1 = (0, 0, 0); torque0 = (0, 0, 0); torque75 = (0, 0, 0);
@@ -113,6 +114,9 @@ double von_mises(std::vector<ChBuilderBeamIGA> beam, std::vector<double> izzs, s
             //double s752 = abs(sigma_c75 - sigma_bend75); sigmas.push_back(s752);
 
             //vonMisesMax = *std::max_element(sigmas.begin(), sigmas.end());
+        }
+        if (tempStress > vonMisesMax){
+            vonMisesMax = tempStress;
         }
         ii++;
     }
@@ -202,8 +206,12 @@ int main(int argc, char* argv[]) {
     double t_end = std::stod(argv[7]);
     std::string export_frames = argv[8];
 
-    std::string simdir = "simout/" + use_beam_column + std::to_string(rider_weight) + "kg_" + 
+    std::cout.precision(3);
+    std::string simdir = "simout/" + use_beam_column + std::to_string(int(rider_weight)) + "kg_" + std::to_string(int(v_kph)) + "kph_" +
                           bump_type + "_" + std::to_string(bump_height) + "hx" + std::to_string(bump_length) + "w/";
+
+    std::string plotTitle = std::to_string(int(rider_weight)) + "kg " + std::to_string(int(v_kph)) + "kph " +
+                            bump_type + " | " + std::to_string(bump_height) + "h x " + std::to_string(bump_length) + "w";
 
     std::cout << "Simulation parameters:" << std::endl;
     std::cout << "    Rider weight: " << rider_weight << std::endl;
@@ -313,6 +321,10 @@ int main(int argc, char* argv[]) {
     double v_m_s = 0.2777778 * v_kph;
     double wheel_Wvel = v_m_s / 0.14;
 
+    // Set t_end as t_clear if time to clear obstacle by 3m is greater
+    double t_clear = 1 + 3./v_m_s + bump_length;
+    if (t_clear > t_end) { t_end = t_clear; }
+
     // Bearing stiffness and damping matrices
     ChMatrixNM<double, 6, 6> bearing_K;
     ChMatrixNM<double, 6, 6> rider_K;
@@ -384,29 +396,31 @@ int main(int argc, char* argv[]) {
     if (bump_type == "triangle") {
 
         // length of bodies
-        double triangle_length = sqrt(pow(bump_height, 2) + 0.25 * pow(bump_length, 2));
+        double triangle_length = sqrt(std::pow(bump_height, 2) + 0.25 * std::pow(bump_length, 2));
 
         // rotation about z
         double angle = atan(2.*bump_height/bump_length);
 
-        ChMatrix33<> rotz1;
+        ChMatrix33<> rotz1 = 0;
         rotz1(0, 0) = cos(angle); rotz1(0, 1) = -sin(angle);
-        rotz1(1, 0) = sin(angle); rotz1(1, 1) =  cos(angle);
+        rotz1(1, 0) = sin(angle); rotz1(1, 1) =  cos(angle); 
+        rotz1(2, 2) = 1;
 
-        ChMatrix33<> rotz2;
+        ChMatrix33<> rotz2 = 0;
         rotz2(0, 0) = cos(-angle); rotz2(0, 1) = -sin(-angle);
         rotz2(1, 0) = sin(-angle); rotz2(1, 1) = cos(-angle);
+        rotz2(2, 2) = 1;
 
-        auto bump1 = chrono_types::make_shared<ChBodyEasyBox>(triangle_length, 0.1, 5, 1000, true, true, ground_mat);
+        auto bump1 = chrono_types::make_shared<ChBodyEasyBox>(triangle_length, 0.1, 5, 100, true, true, ground_mat);
         bump1->SetRot(rotz1);
-        bump1->SetPos(ChVector<>(-v_m_s - 0.25 * bump_length, -0.062 + 0.5 * bump_height - 0.05, 0));
+        bump1->SetPos(ChVector<>(-v_m_s - 0.25 * bump_length, 0.05 * sin(angle) -0.062 + 0.5 * bump_height - 0.05, 0));
         bump1->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/rock.jpg"));
         bump1->SetBodyFixed(true);
         sys.Add(bump1);
 
-        auto bump2 = chrono_types::make_shared<ChBodyEasyBox>(triangle_length, 0.1, 5, 1000, true, true, ground_mat);
+        auto bump2 = chrono_types::make_shared<ChBodyEasyBox>(triangle_length, 0.1, 5, 100, true, true, ground_mat);
         bump2->SetRot(rotz2);
-        bump2->SetPos(ChVector<>(-v_m_s + 0.25 * bump_length, -0.062 + 0.5 * bump_height - 0.05, 0));
+        bump2->SetPos(ChVector<>(-v_m_s + 0.25 * bump_length, 0.05 * sin(angle) -0.062 + 0.5 * bump_height - 0.05, 0));
         bump2->GetVisualShape(0)->SetTexture(GetChronoDataFile("textures/rock.jpg"));
         bump2->SetBodyFixed(true);
         sys.Add(bump2);
@@ -1508,6 +1522,9 @@ int main(int argc, char* argv[]) {
             double my = steerer_link->GetTorque().y();
             double mz = steerer_link->GetTorque().z();
             double vonMises = von_mises(beam, izzs, rads);
+            if (sys.GetChTime() < 0.15) {
+                vonMises = 0.0;
+            }
 
             plot_time.push_back(sys.GetChTime());
             plot_mz.push_back(mz);
@@ -1530,15 +1547,19 @@ int main(int argc, char* argv[]) {
 
         ChGnuPlot gnuplot_mz(simdir + "mz.dat");
         gnuplot_mz.SetGrid();
-        gnuplot_mz.Plot(plot_time, plot_mz, "Moment about column local Z [Nm]", " with lines lt -1 lc rgb'#00AAEE'");
+        gnuplot_mz.SetLabelX("Time [s]");
+        gnuplot_mz.SetLabelY("Moment [N*m]");
+        gnuplot_mz.SetTitle(plotTitle);
+        gnuplot_mz.OutputPNG(simdir + "mz.png",1200,800);
+        gnuplot_mz.Plot(plot_time, plot_mz, "Moment about column local Z [N*m]", " with lines lt -1 lc rgb'#00AAEE'");
 
         ChGnuPlot gnuplot_vonMises(simdir + "vonMises.dat");
         gnuplot_vonMises.SetGrid();
+        gnuplot_vonMises.SetLabelX("Time [s]");
+        gnuplot_vonMises.SetLabelY("Stress [MPa]");
+        gnuplot_vonMises.SetTitle(plotTitle);
+        gnuplot_vonMises.OutputPNG(simdir + "vonMises.png",1200,800);
         gnuplot_vonMises.Plot(plot_time, plot_vonMises, "Maximum beam internal stress [MPa]", " with lines lt -1 lc rgb'#00AAEE'");
     }
-
-
-
-
     return 0;
 }
