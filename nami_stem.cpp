@@ -165,7 +165,7 @@ double von_mises(std::vector<ChBuilderBeamIGA> beam, std::vector<double> izzs, s
 //
 
 int main(int argc, char* argv[]) {
-    GetLog() << CHRONO_VERSION << "\n\n";
+    //GetLog() << CHRONO_VERSION << "\n\n";
 
     /*
     Command line arguments: (rider_weight, v_kph, bump_type, bump height [m], bump length [m], use_beam_column)
@@ -252,14 +252,14 @@ int main(int argc, char* argv[]) {
     ChSystemSMC sys;
 
     // Create the Irrlicht visualization system
-    auto vis = chrono_types::make_shared<ChVisualSystemIrrlicht>();
-    vis->SetWindowSize(1200, 1000);
-    vis->SetWindowTitle("Nami MBD");
-    vis->Initialize();
-    vis->AddLogo();
-    vis->AddSkyBox();
-    vis->AddLight(ChVector<>(30, 100, 30), 180, ChColor(0.5f, 0.5f, 0.5f));
-    vis->AddLight(ChVector<>(30, 80, -30), 190, ChColor(0.2f, 0.3f, 0.4f));
+    //auto vis = chrono_types::make_shared<ChVisualSystemIrrlicht>();
+    //vis->SetWindowSize(1200, 1000);
+    //vis->SetWindowTitle("Nami MBD");
+    //vis->Initialize();
+    //vis->AddLogo();
+    //vis->AddSkyBox();
+    //vis->AddLight(ChVector<>(30, 100, 30), 180, ChColor(0.5f, 0.5f, 0.5f));
+    //vis->AddLight(ChVector<>(30, 80, -30), 190, ChColor(0.2f, 0.3f, 0.4f));
 
     // Solver default settings for all the sub demos:
     auto solver = chrono_types::make_shared<ChSolverMINRES>();
@@ -322,7 +322,7 @@ int main(int argc, char* argv[]) {
     double wheel_Wvel = v_m_s / 0.14;
 
     // Set t_end as t_clear if time to clear obstacle by 3m is greater
-    double t_clear = 1 + 3./v_m_s + bump_length;
+    double t_clear = 1 + (3.+bump_length)/v_m_s;
     if (t_clear > t_end) { t_end = t_clear; }
 
     // Bearing stiffness and damping matrices
@@ -839,14 +839,14 @@ int main(int argc, char* argv[]) {
         load_container->Add(bearing_upper_rigid);
 
         // Add things in Irrlicht 3D viewer.
-        vis->AttachSystem(&sys);
-        vis->EnableBodyFrameDrawing(true);
-        vis->EnableCollisionShapeDrawing(true);
-        //vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
-        vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
-        vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
-        vis->SetSymbolScale(0.15);
-        vis->ShowInfoPanel(true);
+        //vis->AttachSystem(&sys);
+        //vis->EnableBodyFrameDrawing(true);
+        //vis->EnableCollisionShapeDrawing(true);
+        ////vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
+        //vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+        //vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
+        //vis->SetSymbolScale(0.15);
+        //vis->ShowInfoPanel(true);
 
         // Do a linear static analysis.
         //sys.DoStaticLinear();    
@@ -856,7 +856,7 @@ int main(int argc, char* argv[]) {
         chrono::ChStreamOutAsciiFile file_out1(filename.c_str());
         file_out1 << "time" << "," << "fx" << "," << "fy" << "," << "fz" << "," << "mx" << "," << "my" << "," << "mz" << ","<< "ax" << "," << "ay" << "," << "az" << "\n";
 
-        int ii = 1;
+        int ii = 0;
         int framenum = 1;
 
         // gnuplot quantities
@@ -865,11 +865,11 @@ int main(int argc, char* argv[]) {
         std::vector<double> plot_ay;
         std::vector<double> plot_az;
 
-        while ((sys.GetChTime() < t_end) & vis->Run()) {
-            vis->BeginScene();
+        while ((sys.GetChTime() < t_end)) {// & vis->Run()
+            //vis->BeginScene();
 
             // Advance the sim
-            vis->Render();
+            //vis->Render();
             sys.DoStepDynamics(5e-4);
 
             // Set the scooter speed
@@ -878,7 +878,7 @@ int main(int argc, char* argv[]) {
             body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
 
             // Move the camera
-            vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+            //vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
 
             // Export forces on steering column link2
             double fx = steerer_link->GetForce().x();
@@ -899,15 +899,19 @@ int main(int argc, char* argv[]) {
 
             file_out1 << sys.GetChTime() << "," << fx << "," << fy << "," << fz << "," << mx << "," << my << "," << mz << "," << ax << "," << ay << "," << az << "\n";
 
-            // Export every nth frame, target 50fps
-            if ((export_frames == "yes") & (ii % 40 == 0)){
-                vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
-                framenum++;
+            if (ii % 40 == 0) {
+                std::cout << "Sim time: " << sys.GetChTime() << "s" << std::endl;
             }
+            
+            // Export every nth frame, target 50fps
+            //if ((export_frames == "yes") & (ii % 40 == 0)){
+            //    vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
+            //    framenum++;
+            //}
 
             ii++;
 
-            vis->EndScene();
+            //vis->EndScene();
         }
 
         ChGnuPlot gnuplot_ay("data/ay.dat");
@@ -1247,8 +1251,6 @@ int main(int argc, char* argv[]) {
         auto node_mid6 = builder6.GetLastBeamNodes()[0];
         auto node_end6 = builder6.GetLastBeamNodes().back();
 
-        std::cout << "section 6 has " << builder6.GetLastBeamNodes().size() << "nodes" << "\n";
-
         // Attach first node of this beam to last node of last beam
         auto joint56 = chrono_types::make_shared<ChLinkMateFix>();
         joint56->Initialize(node_end5, node_beg6);
@@ -1315,9 +1317,6 @@ int main(int argc, char* argv[]) {
         auto dummySL = chrono_types::make_shared<ChLinkMateFix>();
         dummySL->Initialize(node_mid2, dummyS);
         sys.Add(dummySL);
-
-        std::cout << node_mid2->GetPos() << "\n";
-        std::cout << dummyS->GetPos() << "\n";
 
         auto dummyL = chrono_types::make_shared<ChBody>();
         dummyL->SetMass(1e-3);
@@ -1474,14 +1473,14 @@ int main(int argc, char* argv[]) {
         }
 
         // Add things to Irrlicht 3D viewer
-        vis->AttachSystem(&sys);
-        vis->EnableBodyFrameDrawing(true);
-        vis->EnableCollisionShapeDrawing(true);
-        vis->EnableContactDrawing(ContactsDrawMode::CONTACT_NORMALS);
-        //vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
-        vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
-        vis->SetSymbolScale(0.15);
-        vis->ShowInfoPanel(true);
+        //vis->AttachSystem(&sys);
+        //vis->EnableBodyFrameDrawing(true);
+        //vis->EnableCollisionShapeDrawing(true);
+        //vis->EnableContactDrawing(ContactsDrawMode::CONTACT_NORMALS);
+        ////vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+        //vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
+        //vis->SetSymbolScale(0.15);
+        //vis->ShowInfoPanel(true);
 
         // Do a linear static analysis.
         //sys.DoStaticLinear();    
@@ -1499,11 +1498,17 @@ int main(int argc, char* argv[]) {
         std::vector<double> plot_mz;
         std::vector<double> plot_vonMises;
 
-        while (sys.GetChTime() < t_end & vis->Run()) {
-            vis->BeginScene();
+        std::cout << std::endl;
+        std::cout << std::endl;
+        std::cout << "Starting simulation..." << std::endl;
+        std::cout << "-------------------------------------" << std::endl;
+        std::cout << "Sim time: " << sys.GetChTime() << "s" << std::endl;
+
+        while (sys.GetChTime() < t_end) { // & vis->Run()
+            //vis->BeginScene();
 
             // Advance the sim
-            vis->Render();
+            //vis->Render();
             sys.DoStepDynamics(5e-4);
 
             // Set the scooter speed
@@ -1512,7 +1517,7 @@ int main(int argc, char* argv[]) {
             body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
 
             // Move the camera
-            vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+            //vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
 
             // Export forces on steering column link2
             double fx = steerer_link->GetForce().x();
@@ -1534,15 +1539,19 @@ int main(int argc, char* argv[]) {
 
             file_out1 << sys.GetChTime() << "," << fx << "," << fy << "," << fz << "," << mx << "," << my << "," << mz << "," << 1e-6 * vonMises << "\n";
 
-            // Export every nth frame (target 50fps)
-            if ((export_frames == "yes") & (ii % 40 == 0)) {
-                vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
-                framenum++;
+            if (ii % 200 == 0) {
+                std::cout << "Sim time: " << sys.GetChTime() << "s" << std::endl;
             }
+
+            // Export every nth frame (target 50fps)
+            //if ((export_frames == "yes") & (ii % 40 == 0)) {
+            //    vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
+            //    framenum++;
+            //}
 
             ii++;
 
-            vis->EndScene();
+            //vis->EndScene();
         }
 
         ChGnuPlot gnuplot_mz(simdir + "mz.dat");
