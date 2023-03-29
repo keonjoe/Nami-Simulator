@@ -39,6 +39,8 @@
 
 #define USE_MKL
 
+//#define GEN_IRR
+
 #ifdef USE_MKL
     #include "chrono_pardisomkl/ChSolverPardisoMKL.h"
 #endif
@@ -47,6 +49,20 @@ using namespace chrono;
 using namespace chrono::fea;
 using namespace chrono::irrlicht;
 using namespace chrono::postprocess;
+
+// Check if directory exists
+int dirExists(std::string path)
+{
+    const char* path_char = path.c_str();
+    struct stat info;
+
+    if (stat(path_char, &info) != 0)
+        return 0;
+    else if (info.st_mode & S_IFDIR)
+        return 1;
+    else
+        return 0;
+}
 
 // Calculate max Von Mises stress present in beam given internal forces at beam center section
 // We assume for these tests that the maximum stress occurs at the outside surface along the global x-axis
@@ -223,6 +239,12 @@ int main(int argc, char* argv[]) {
     std::cout << "    Duration of simulation: " << t_end << "s" << std::endl;
     std::cout << "    Saving outputs to: "<< simdir << std::endl;
 
+    // Skip if simulation data already exists
+    if (dirExists(simdir)==1) {
+        std::cout << "Simulation results already exist!" << std::endl;
+        return 0;
+    }
+
     // Initialize output directories
     if (!filesystem::create_directory(filesystem::path("simout/"))) {
         std::string exit_program;
@@ -251,15 +273,17 @@ int main(int argc, char* argv[]) {
     // Create a Chrono::Engine physical system
     ChSystemSMC sys;
 
+#ifdef GEN_IRR
     // Create the Irrlicht visualization system
-    //auto vis = chrono_types::make_shared<ChVisualSystemIrrlicht>();
-    //vis->SetWindowSize(1200, 1000);
-    //vis->SetWindowTitle("Nami MBD");
-    //vis->Initialize();
-    //vis->AddLogo();
-    //vis->AddSkyBox();
-    //vis->AddLight(ChVector<>(30, 100, 30), 180, ChColor(0.5f, 0.5f, 0.5f));
-    //vis->AddLight(ChVector<>(30, 80, -30), 190, ChColor(0.2f, 0.3f, 0.4f));
+    auto vis = chrono_types::make_shared<ChVisualSystemIrrlicht>();
+    vis->SetWindowSize(1200, 1000);
+    vis->SetWindowTitle("Nami MBD");
+    vis->Initialize();
+    vis->AddLogo();
+    vis->AddSkyBox();
+    vis->AddLight(ChVector<>(30, 100, 30), 180, ChColor(0.5f, 0.5f, 0.5f));
+    vis->AddLight(ChVector<>(30, 80, -30), 190, ChColor(0.2f, 0.3f, 0.4f));
+#endif
 
     // Solver default settings for all the sub demos:
     auto solver = chrono_types::make_shared<ChSolverMINRES>();
@@ -288,7 +312,9 @@ int main(int argc, char* argv[]) {
 
 #ifdef USE_MKL
     auto mkl_solver = chrono_types::make_shared<ChSolverPardisoMKL>();
+    sys.SetNumThreads(16);
     sys.SetSolver(mkl_solver);
+    
 #endif
 
     sys.Clear();
@@ -839,14 +865,16 @@ int main(int argc, char* argv[]) {
         load_container->Add(bearing_upper_rigid);
 
         // Add things in Irrlicht 3D viewer.
-        //vis->AttachSystem(&sys);
-        //vis->EnableBodyFrameDrawing(true);
-        //vis->EnableCollisionShapeDrawing(true);
-        ////vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
-        //vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
-        //vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
-        //vis->SetSymbolScale(0.15);
-        //vis->ShowInfoPanel(true);
+#ifdef GEN_IRR
+        vis->AttachSystem(&sys);
+        vis->EnableBodyFrameDrawing(true);
+        vis->EnableCollisionShapeDrawing(true);
+        //vis->EnableContactDrawing(ContactsDrawMode::CONTACT_FORCES);
+        vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+        vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
+        vis->SetSymbolScale(0.15);
+        vis->ShowInfoPanel(true);
+#endif
 
         // Do a linear static analysis.
         //sys.DoStaticLinear();    
@@ -866,10 +894,12 @@ int main(int argc, char* argv[]) {
         std::vector<double> plot_az;
 
         while ((sys.GetChTime() < t_end)) {// & vis->Run()
-            //vis->BeginScene();
+#ifdef GEN_IRR
+            vis->BeginScene();
 
             // Advance the sim
-            //vis->Render();
+            vis->Render();
+#endif
             sys.DoStepDynamics(5e-4);
 
             // Set the scooter speed
@@ -877,8 +907,10 @@ int main(int argc, char* argv[]) {
             body_8->SetWvel_loc(Vector(0, 0, wheel_Wvel));
             body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
 
+#ifdef GEN_IRR
             // Move the camera
-            //vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+            vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+#endif
 
             // Export forces on steering column link2
             double fx = steerer_link->GetForce().x();
@@ -903,15 +935,18 @@ int main(int argc, char* argv[]) {
                 std::cout << "Sim time: " << sys.GetChTime() << "s" << std::endl;
             }
             
+
+#ifdef GEN_IRR
             // Export every nth frame, target 50fps
-            //if ((export_frames == "yes") & (ii % 40 == 0)){
-            //    vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
-            //    framenum++;
-            //}
+            if ((export_frames == "yes") & (ii % 40 == 0)){
+                vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
+                framenum++;
+            }
 
+
+            vis->EndScene();
+#endif
             ii++;
-
-            //vis->EndScene();
         }
 
         ChGnuPlot gnuplot_ay("data/ay.dat");
@@ -1472,15 +1507,17 @@ int main(int argc, char* argv[]) {
             in->SetPos_dt(Vector(-v_m_s, 0, 0));
         }
 
+#ifdef GEN_IRR
         // Add things to Irrlicht 3D viewer
-        //vis->AttachSystem(&sys);
-        //vis->EnableBodyFrameDrawing(true);
-        //vis->EnableCollisionShapeDrawing(true);
-        //vis->EnableContactDrawing(ContactsDrawMode::CONTACT_NORMALS);
-        ////vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
-        //vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
-        //vis->SetSymbolScale(0.15);
-        //vis->ShowInfoPanel(true);
+        vis->AttachSystem(&sys);
+        vis->EnableBodyFrameDrawing(true);
+        vis->EnableCollisionShapeDrawing(true);
+        vis->EnableContactDrawing(ContactsDrawMode::CONTACT_NORMALS);
+        //vis->EnableLinkDrawing(LinkDrawMode::LINK_REACT_FORCE);
+        vis->AddCamera(ChVector<>(0.65, 0.2, 1.25), body_1->GetPos());
+        vis->SetSymbolScale(0.15);
+        vis->ShowInfoPanel(true);
+#endif
 
         // Do a linear static analysis.
         //sys.DoStaticLinear();    
@@ -1505,10 +1542,12 @@ int main(int argc, char* argv[]) {
         std::cout << "Sim time: " << sys.GetChTime() << "s" << std::endl;
 
         while (sys.GetChTime() < t_end) { // & vis->Run()
-            //vis->BeginScene();
+#ifdef GEN_IRR
+            vis->BeginScene();
 
             // Advance the sim
-            //vis->Render();
+            vis->Render();
+#endif
             sys.DoStepDynamics(5e-4);
 
             // Set the scooter speed
@@ -1516,9 +1555,10 @@ int main(int argc, char* argv[]) {
             body_8->SetWvel_loc(Vector(0, 0, wheel_Wvel));
             body_9->SetWvel_loc(Vector(0, 0, wheel_Wvel));
 
+#ifdef GEN_IRR
             // Move the camera
-            //vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
-
+            vis->UpdateCamera(ChVector<>(0.65, 0.2, 1.25) + body_1->GetPos(), body_1->GetPos());
+#endif
             // Export forces on steering column link2
             double fx = steerer_link->GetForce().x();
             double fy = steerer_link->GetForce().y();
@@ -1543,15 +1583,19 @@ int main(int argc, char* argv[]) {
                 std::cout << "Sim time: " << sys.GetChTime() << "s" << std::endl;
             }
 
+#ifdef GEN_IRR
             // Export every nth frame (target 50fps)
-            //if ((export_frames == "yes") & (ii % 40 == 0)) {
-            //    vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
-            //    framenum++;
-            //}
+            if ((export_frames == "yes") & (ii % 40 == 0)) {
+                vis->WriteImageToFile(simdir + "frames/" + std::to_string(framenum) + ".png");
+                framenum++;
+            }
+
+
+
+            vis->EndScene();
+#endif      
 
             ii++;
-
-            //vis->EndScene();
         }
 
         ChGnuPlot gnuplot_mz(simdir + "mz.dat");
